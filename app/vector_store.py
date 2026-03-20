@@ -41,12 +41,24 @@ class VectorStore:
             
         self.index.upsert(vectors=vectors)
 
-    def search(self, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
-        """Searches the vector store using KNN and returns the metadata (which contains the text)."""
+    def search(self, query_embedding: List[float], top_k: int = 5, query_text: str = None) -> List[Dict[str, Any]]:
+        """Searches the vector store using KNN and applies keyword boosting if text is provided."""
+        fetch_k = top_k * 3 if query_text else top_k
         results = self.index.query(
             vector=query_embedding,
-            top_k=top_k,
+            top_k=fetch_k,
             include_metadata=True
         )
-        # return list of metadata dicts
-        return [res.metadata for res in results if res.metadata]
+        
+        metadata_list = [res.metadata for res in results if res.metadata and "text" in res.metadata]
+        
+        if query_text:
+            # Simple keyword boosting (Simulated Hybrid Search)
+            keywords = [k.lower() for k in query_text.split() if len(k) > 3]
+            for meta in metadata_list:
+                bump = sum(0.1 for k in keywords if k in meta["text"].lower())
+                meta["_boost_score"] = bump
+                
+            metadata_list = sorted(metadata_list, key=lambda x: x.get("_boost_score", 0), reverse=True)
+            
+        return metadata_list[:top_k]
