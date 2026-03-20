@@ -1,8 +1,6 @@
-"use client";
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { ingestGithub } from "@/lib/api";
+import { ingestGithub, getIngestStatus } from "@/lib/api";
 
 export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
   const { getToken } = useAuth();
@@ -10,6 +8,42 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
   const [pat, setPat] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<{ processed_files: number; total_files: number; status: string; repo?: string } | null>(null);
+
+  // Poll for ingestion progress
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    const checkStatus = async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const currentStatus = await getIngestStatus(token);
+        
+        if (currentStatus && currentStatus.status !== "idle") {
+          setProgress(currentStatus);
+          if (currentStatus.status === "completed") {
+            setLoading(false);
+            // Optional: Clear progress after a few seconds or keep it to show success
+          } else {
+            setLoading(true);
+          }
+        } else {
+          setProgress(null);
+        }
+      } catch (err) {
+        console.error("Status polling failed:", err);
+      }
+    };
+
+    // Initial check
+    checkStatus();
+
+    // Poll every 3 seconds
+    interval = setInterval(checkStatus, 3000);
+
+    return () => clearInterval(interval);
+  }, [getToken]);
 
   const handleIngest = async () => {
     if (!url) return;
@@ -19,26 +53,54 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
     try {
       const token = await getToken();
       await ingestGithub(url, token!, activeBrainId, pat || undefined);
-      setStatus("Successfully queued for background indexing. This may take a few minutes for larger repos.");
+      setStatus(null); // Clear manual status in favor of progress bar
       setUrl("");
     } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
-    } finally {
       setLoading(false);
     }
   };
+
+  const percent = progress?.total_files ? Math.round((progress.processed_files / progress.total_files) * 100) : 0;
 
   return (
     <div className="w-full max-w-2xl p-8 rounded-3xl bg-white/[0.03] border border-white/10 space-y-6">
       <div className="space-y-2">
         <h2 className="text-2xl font-bold tracking-tight">GitHub Intelligence</h2>
         <p className="text-sm text-white/40 leading-relaxed">
-          Paste a public repository URL to index its documentation and source code into your active brain.
+          Paste a public repository URL to index its documentation and source code locally with zero rate limits.
         </p>
       </div>
 
+      {progress && (
+        <div className="p-6 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
+           <div className="flex items-start justify-between">
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-widest font-bold text-indigo-400">Current Synchronization</p>
+                <p className="text-sm font-semibold truncate max-w-[300px]">{progress.repo}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xl font-bold text-indigo-300">{percent}%</p>
+                <p className="text-[10px] opacity-40 uppercase tracking-tighter">Processed</p>
+              </div>
+           </div>
+
+           <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-indigo-600 to-violet-500 transition-all duration-1000 ease-out"
+                style={{ width: `${percent}%` }}
+              ></div>
+           </div>
+
+           <div className="flex justify-between items-center text-[10px] font-medium opacity-60 italic">
+              <span>{progress.processed_files} / {progress.total_files} files indexed</span>
+              <span className="capitalize px-2 py-0.5 rounded-full bg-white/5">{progress.status}</span>
+           </div>
+        </div>
+      )}
+
       <div className="space-y-4">
-        <div className="space-y-2">
+        <div className="space-y-2 text-left">
            <label className="text-[10px] uppercase tracking-widest font-bold opacity-40 ml-1">Repository URL</label>
            <input 
              type="text" 
@@ -46,10 +108,11 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
              className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-sm focus:outline-none focus:border-indigo-500/50 transition-all"
              value={url}
              onChange={(e) => setUrl(e.target.value)}
+             disabled={loading}
            />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 text-left">
            <label className="text-[10px] uppercase tracking-widest font-bold opacity-40 ml-1">GitHub Personal Access Token (Optional)</label>
            <input 
              type="password" 
@@ -57,8 +120,9 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
              className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-sm focus:outline-none focus:border-indigo-500/50 transition-all"
              value={pat}
              onChange={(e) => setPat(e.target.value)}
+             disabled={loading}
            />
-           <p className="text-[9px] opacity-20 ml-1 italic">Providing a PAT ensures higher rate limits for large repositories.</p>
+           <p className="text-[9px] opacity-20 ml-1 italic">Optional for public repos, but resolves 403 bandwidth issues.</p>
         </div>
 
         <button 
@@ -71,7 +135,7 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
           }`}
         >
           {loading && <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>}
-          {loading ? "Synchronizing..." : "Sync Repository"}
+          {loading ? "Synchronizing Codebase..." : "Sync Repository"}
         </button>
 
         {status && (

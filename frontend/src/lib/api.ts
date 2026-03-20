@@ -131,3 +131,11 @@ export async function ingestGithub(repoUrl: string, token: string, brainId: stri
 
   return await response.json();
 }
+
+export async function getIngestStatus(token: string) {
+  const response = await fetch(`${API_BASE_URL}/ingest-status`, {
+    headers: { "Authorization": `Bearer ${token}` }
+  });
+  if (!response.ok) return { status: "idle" };
+  return await response.json();
+}

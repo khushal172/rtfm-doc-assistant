@@ -135,6 +135,17 @@ async def ingest_github(
                 files_to_index = [f for f in all_files if gh.should_index(f)]
                 logger.info(f"Found {len(files_to_index)} valid files in ZIP. Starting indexing...")
 
+                # Track progress in Redis
+                progress_key = f"rtfm:ingest:{user_id}:progress"
+                progress_data = {
+                    "repo": f"{repo_info['owner']}/{repo_info['repo']}",
+                    "total_files": len(files_to_index),
+                    "processed_files": 0,
+                    "status": "indexing",
+                    "timestamp": datetime.utcnow().isoformat() + "Z"
+                }
+                session_store.redis.set(progress_key, json.dumps(progress_data))
+
                 for i, file_path in enumerate(files_to_index):
                     try:
                         with z.open(file_path) as f:
@@ -182,6 +193,13 @@ async def ingest_github(
                         if (i + 1) % 20 == 0:
                             logger.info(f"GitHub Ingest Progress: {i+1}/{len(files_to_index)} files processed.")
                             
+                        # Update Redis progress every 5 files
+                        if (i + 1) % 5 == 0 or i == len(files_to_index) - 1:
+                            progress_data["processed_files"] = i + 1
+                            if i == len(files_to_index) - 1:
+                                progress_data["status"] = "completed"
+                            session_store.redis.set(progress_key, json.dumps(progress_data))
+                            
                     except Exception as file_err:
                         logger.warning(f"Failed to process file {file_path}: {file_err}")
 
@@ -191,6 +209,17 @@ async def ingest_github(
 
     background_tasks.add_task(background_ingest)
     return {"message": "GitHub ingestion started in background", "repo": f"{repo_info['owner']}/{repo_info['repo']}"}
+
+@app.get("/ingest-status")
+async def get_ingest_status(
+    user_id: str = Depends(verify_token)
+):
+    """Retrieves the current ingestion progress for a user."""
+    progress_key = f"rtfm:ingest:{user_id}:progress"
+    data = session_store.redis.get(progress_key)
+    if not data:
+        return {"status": "idle"}
+    return json.loads(data)
 
 @app.post("/chat")
 async def chat(
