@@ -1,36 +1,35 @@
 from typing import List
 import numpy as np
-from google import genai
-from google.genai import types
-from app.config import settings
+from fastembed import TextEmbedding
+from app.logging_config import logger
 
 class EmbeddingService:
-    """Wrapper around Gemini's embedding model using MRL and normalization."""
-    def __init__(self, dimensionality: int = 1536):
-        self.client = genai.Client(api_key=settings.gemini_api_key)
-        self.model_name = "gemini-embedding-2-preview"
+    """Wrapper around local FastEmbed model to avoid Gemini API rate limits."""
+    def __init__(self, dimensionality: int = 384):
+        # We use bge-small-en-v1.5 which is very fast and has 384 dimensions
+        logger.info("Initializing local FastEmbed TextEmbedding (BAAI/bge-small-en-v1.5)")
+        self.client = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
         self.dimensionality = dimensionality
         
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        """Embeds a batch of texts and normalizes them."""
+        """Embeds a batch of texts locally and normalizes them."""
         if not texts:
             return []
             
-        result = self.client.models.embed_content(
-            model=self.model_name,
-            contents=texts,
-            config=types.EmbedContentConfig(output_dimensionality=self.dimensionality)
-        )
+        # FastEmbed returns a generator of embeddings
+        embeddings_gen = self.client.embed(texts)
         
         normalized_embeddings = []
-        for emb_obj in result.embeddings:
-            # Apply L2 normalization to preserve cosine similarity search accuracy
-            vec = np.array(emb_obj.values)
-            normed_vec = vec / np.linalg.norm(vec)
-            normalized_embeddings.append(normed_vec.tolist())
+        for vec in embeddings_gen:
+            # L2 normalization for cosine similarity
+            norm = np.linalg.norm(vec)
+            if norm > 0:
+                vec = vec / norm
+            normalized_embeddings.append(vec.tolist())
             
         return normalized_embeddings
 
     def embed_text(self, text: str) -> List[float]:
         """Embeds a single string."""
-        return self.embed_texts([text])[0]
+        results = self.embed_texts([text])
+        return results[0] if results else []

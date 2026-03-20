@@ -148,13 +148,13 @@ async def ingest_github(
                         chunk_buffer.extend(file_chunks)
                         file_registry_buffer.add(display_path)
                         
-                        # IF buffer is getting large or it's the last file, flush it in batches of 100
-                        if len(chunk_buffer) >= 100 or i == len(files_to_index) - 1:
+                        # IF buffer is getting large or it's the last file, flush it
+                        if len(chunk_buffer) >= 256 or i == len(files_to_index) - 1:
                             while chunk_buffer:
-                                batch = chunk_buffer[:100] # Strict 100 chunk limit for Gemini
-                                chunk_buffer = chunk_buffer[100:]
+                                batch = chunk_buffer[:256] 
+                                chunk_buffer = chunk_buffer[256:]
                                 
-                                logger.info(f"Embedding batch of {len(batch)} chunks...")
+                                logger.info(f"Embedding batch of {len(batch)} chunks (Local)...")
                                 try:
                                     embeddings = embedder.embed_texts([c["text"] for c in batch])
                                     vector_store.upsert_chunks(
@@ -164,11 +164,9 @@ async def ingest_github(
                                         brain_id=x_brain_id, 
                                         user_id=user_id
                                     )
-                                    # Small throttle to stay under 100 RPM
-                                    await asyncio.sleep(2) 
                                 except Exception as embed_err:
                                     logger.error(f"Batch embedding failed: {embed_err}")
-                                    await asyncio.sleep(5) # Longer sleep on error
+                                    await asyncio.sleep(1) # Brief pause on error
                                     
                             # Update registry for files processed so far
                             doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
