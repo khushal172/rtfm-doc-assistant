@@ -210,6 +210,7 @@ async def ingest_github(
 
     # Proactively clear/reset progress state so the UI doesn't see old 100% data
     progress_key = f"rtfm:ingest:{user_id}:progress"
+    logger.info(f"Resetting ingest progress for user {user_id} (key: {progress_key})")
     session_store.redis.delete(progress_key)
 
     background_tasks.add_task(background_ingest)
@@ -224,7 +225,10 @@ async def get_ingest_status(
     data = session_store.redis.get(progress_key)
     if not data:
         return {"status": "idle"}
-    return json.loads(data)
+    
+    status_data = json.loads(data)
+    logger.info(f"Status check for {user_id}: {status_data.get('status')} ({status_data.get('processed_files')}/{status_data.get('total_files')})")
+    return status_data
 
 @app.post("/chat")
 async def chat(

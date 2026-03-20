@@ -116,26 +116,46 @@ export async function deleteBrain(brainId: string, token: string) {
 }
 
 export async function ingestGithub(repoUrl: string, token: string, brainId: string = "default", githubToken?: string) {
-  const response = await fetch(`${API_BASE_URL}/ingest-github?url=${encodeURIComponent(repoUrl)}`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "X-Brain-Id": brainId,
-      ...(githubToken ? { "github-token": githubToken } : {})
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/ingest-github?url=${encodeURIComponent(repoUrl)}&brain_id=${brainId}`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        ...(githubToken ? { "github-token": githubToken } : {})
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to start GitHub ingestion");
     }
-  });
 
-  if (!response.ok) {
-    throw new Error("Failed to start GitHub ingestion");
+    return await response.json();
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return await response.json();
 }
 
 export async function getIngestStatus(token: string) {
-  const response = await fetch(`${API_BASE_URL}/ingest-status`, {
-    headers: { "Authorization": `Bearer ${token}` }
-  });
-  if (!response.ok) return { status: "idle" };
-  return await response.json();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+  try {
+    // Add a timestamp to bypass any browser/proxy caching
+    const response = await fetch(`${API_BASE_URL}/ingest-status?t=${Date.now()}`, {
+      headers: { "Authorization": `Bearer ${token}` },
+      signal: controller.signal,
+      cache: "no-store"
+    });
+    if (!response.ok) return { status: "idle" };
+    return await response.json();
+  } catch (err) {
+    console.error("[API] Status fetch aborted or failed:", err);
+    return { status: "idle" };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }

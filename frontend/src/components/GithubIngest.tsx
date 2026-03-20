@@ -10,66 +10,72 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<{ processed_files: number; total_files: number; status: string; repo?: string } | null>(null);
 
+  // Ref to track if a manual ingest request is currently awaiting a response
+  // to avoid concurrent getToken() calls which might be hanging the interval.
+  const isTriggering = useState(false)[0]; 
+
   // Poll for ingestion progress
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let timer: NodeJS.Timeout;
 
-    const checkStatus = async () => {
+    const poll = async () => {
+      // If we just clicked "Sync", wait for the initial trigger to finish 
+      // before resuming the polling loop to avoid getToken contention.
+      if (loading && !progress) {
+          console.log("[Poll] Skipping poll while initial trigger is in flight...");
+          return;
+      }
+
       try {
+        console.log("[Poll] Checking status...");
         const token = await getToken();
         if (!token) return;
+
         const currentStatus = await getIngestStatus(token);
-        
-        console.log("Polling status:", currentStatus.status, currentStatus.processed_files);
+        console.log("[Poll] Response:", currentStatus.status, "| Count:", currentStatus.processed_files);
 
         if (currentStatus && currentStatus.status !== "idle") {
-          // Check for staleness (e.g., more than 5 minutes old)
+          // Staleness check (5 mins)
           const statusTime = new Date(currentStatus.timestamp).getTime();
-          const now = Date.now();
-          const isStale = currentStatus.status === "completed" && (now - statusTime > 300000);
+          const isStale = currentStatus.status === "completed" && (Date.now() - statusTime > 300000);
 
           if (isStale) {
             setProgress(null);
-            setLoading(prev => prev ? false : prev);
+            setLoading(false);
             return;
           }
 
           setProgress(currentStatus);
-          
-          if (currentStatus.status === "indexing") {
-            setLoading(prev => !prev ? true : prev);
-          } else if (currentStatus.status === "completed") {
-            setLoading(prev => prev ? false : prev);
-          }
+          if (currentStatus.status === "indexing") setLoading(true);
+          if (currentStatus.status === "completed") setLoading(false);
         } else {
-          // If status is idle, and we aren't currently "awaiting" a fresh sync start, clear.
           setProgress(null);
-          // Don't force setLoading(false) here because handleIngest might have just set it to true
         }
       } catch (err) {
-        console.error("Status polling failed:", err);
+        console.error("[Poll] Error:", err);
       }
     };
 
-    checkStatus();
-    interval = setInterval(checkStatus, 3000);
-    return () => clearInterval(interval);
-    // Removed 'loading' dependency to avoid re-render loops
-  }, [getToken]); 
+    timer = setInterval(poll, 4000); // 4s interval to be conservative
+    return () => clearInterval(timer);
+  }, [getToken, loading, progress]);
 
   const handleIngest = async () => {
     if (!url) return;
+    console.log("[UI] HandleIngest Clicked");
     setLoading(true);
     setProgress(null); 
     setStatus("Initiating GitHub synchronization...");
     
     try {
       const token = await getToken();
-      await ingestGithub(url, token!, activeBrainId, pat || undefined);
+      console.log("[UI] Fetching backend...");
+      const result = await ingestGithub(url, token!, activeBrainId, pat || undefined);
+      console.log("[UI] Backend Response Received:", result);
       setStatus(null);
       setUrl("");
     } catch (error) {
-      console.error("Ingest failed:", error);
+      console.error("[UI] HandleIngest Error:", error);
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
       setLoading(false);
     }
