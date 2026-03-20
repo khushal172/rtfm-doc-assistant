@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rtfm-agent"
+version = "0.1.0"
+description = "RTFM For Me Agent"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.6",
+    "pydantic-settings>=2.5.2",
+    "google-genai>=0.2.2",
+    "langchain>=0.3.0",
+    "langchain-google-genai>=2.0.0",
+    "langchain-text-splitters>=0.3.0",
+    "upstash-vector>=0.6.0",
+    "upstash-redis>=1.1.0",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.3",
+    "requests",
+]
