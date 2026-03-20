@@ -11,7 +11,7 @@ def test_embedding_and_upsert():
     embeddings = embedder.embed_texts(texts)
     
     assert len(embeddings) == 2
-    assert len(embeddings[0]) == 3072 # Gemini embedding native dimension
+    assert len(embeddings[0]) == 1536 # Normalized MRL dimension
     
     # 2. Upsert vectors
     chunks = [
@@ -24,5 +24,5 @@ def test_embedding_and_upsert():
     
     # 3. Check connectivity bounds
     info = vs.index.info()
-    assert info.dimension == 3072
+    assert info.dimension == 1536
     assert info.vector_count >= 2
