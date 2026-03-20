@@ -74,7 +74,6 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
       setLoading(false);
     }
   };
- bitumen
 
   const percent = progress?.total_files ? Math.round((progress.processed_files / progress.total_files) * 100) : 0;
 
