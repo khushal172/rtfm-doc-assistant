@@ -23,6 +23,17 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
         console.log("Current ingest status:", currentStatus);
 
         if (currentStatus && currentStatus.status !== "idle") {
+          // Check for staleness (e.g., more than 2 minutes old)
+          const statusTime = new Date(currentStatus.timestamp).getTime();
+          const now = new Date().getTime();
+          const isStale = currentStatus.status === "completed" && (now - statusTime > 120000);
+
+          if (isStale) {
+            setProgress(null);
+            setLoading(false);
+            return;
+          }
+
           // If we just clicked Sync (loading is true), ignore any "completed" 
           // status because it MUST be from a previous run.
           if (loading && currentStatus.status === "completed") {
@@ -39,8 +50,6 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
         } else {
           // IMPORTANT: If status is idle, clear the progress card!
           setProgress(null);
-          // If we were loading, but status is idle, it means we are in the 
-          // gap between delete and the new indexing start. Keep loading state.
         }
       } catch (err) {
         console.error("Status polling failed:", err);
