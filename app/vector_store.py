@@ -101,18 +101,19 @@ class VectorStore:
     def delete_chunks(self, filename: str, user_id: str, brain_id: str = "default"):
         """
         Deletes all chunks associated with a specific file, user, and brain.
-        Query for IDs first, then delete.
+        Uses range scan to find all IDs deterministically.
         """
-        # Query for all IDs matching the metadata
-        dummy_emb = [0.0] * 1536
-        res = self.index.query(
-            vector=dummy_emb,
-            top_k=1000, 
-            include_metadata=False,
-            filter=f"source = '{filename}' AND user_id = '{user_id}' AND brain_id = '{brain_id}'"
-        )
+        ids_to_delete = []
+        cursor = '0'
         
-        ids_to_delete = [r.id for r in res]
+        while cursor:
+            res = self.index.range(cursor=cursor, limit=1000, include_metadata=True)
+            for v in res.vectors:
+                if (v.metadata.get('source') == filename and 
+                    v.metadata.get('user_id') == user_id and 
+                    v.metadata.get('brain_id') == brain_id):
+                    ids_to_delete.append(v.id)
+            cursor = res.next_cursor
         if ids_to_delete:
             self.index.delete(ids=ids_to_delete)
             return len(ids_to_delete)
