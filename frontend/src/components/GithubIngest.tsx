@@ -20,36 +20,31 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
         if (!token) return;
         const currentStatus = await getIngestStatus(token);
         
-        console.log("Current ingest status:", currentStatus);
+        console.log("Polling status:", currentStatus.status, currentStatus.processed_files);
 
         if (currentStatus && currentStatus.status !== "idle") {
-          // Check for staleness (e.g., more than 2 minutes old)
+          // Check for staleness (e.g., more than 5 minutes old)
           const statusTime = new Date(currentStatus.timestamp).getTime();
-          const now = new Date().getTime();
-          const isStale = currentStatus.status === "completed" && (now - statusTime > 120000);
+          const now = Date.now();
+          const isStale = currentStatus.status === "completed" && (now - statusTime > 300000);
 
           if (isStale) {
             setProgress(null);
-            setLoading(false);
-            return;
-          }
-
-          // If we just clicked Sync (loading is true), ignore any "completed" 
-          // status because it MUST be from a previous run.
-          if (loading && currentStatus.status === "completed") {
+            setLoading(prev => prev ? false : prev);
             return;
           }
 
           setProgress(currentStatus);
           
           if (currentStatus.status === "indexing") {
-            setLoading(true);
+            setLoading(prev => !prev ? true : prev);
           } else if (currentStatus.status === "completed") {
-            setLoading(false);
+            setLoading(prev => prev ? false : prev);
           }
         } else {
-          // IMPORTANT: If status is idle, clear the progress card!
+          // If status is idle, and we aren't currently "awaiting" a fresh sync start, clear.
           setProgress(null);
+          // Don't force setLoading(false) here because handleIngest might have just set it to true
         }
       } catch (err) {
         console.error("Status polling failed:", err);
@@ -59,12 +54,13 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
     checkStatus();
     interval = setInterval(checkStatus, 3000);
     return () => clearInterval(interval);
-  }, [getToken, loading]);
+    // Removed 'loading' dependency to avoid re-render loops
+  }, [getToken]); 
 
   const handleIngest = async () => {
     if (!url) return;
     setLoading(true);
-    setProgress(null); // Immediately clear old progress card
+    setProgress(null); 
     setStatus("Initiating GitHub synchronization...");
     
     try {
@@ -73,10 +69,12 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
       setStatus(null);
       setUrl("");
     } catch (error) {
+      console.error("Ingest failed:", error);
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
       setLoading(false);
     }
   };
+ bitumen
 
   const percent = progress?.total_files ? Math.round((progress.processed_files / progress.total_files) * 100) : 0;
 
