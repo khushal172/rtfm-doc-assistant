@@ -228,6 +228,23 @@ async def list_documents(user_id: str = Depends(verify_token)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/documents/{filename}")
+async def delete_document(filename: str, user_id: str = Depends(verify_token)):
+    """Deletes a document and all its chunks from the vector store and registry."""
+    try:
+        # 1. Purge from Vector Store
+        count = vector_store.delete_chunks(filename, user_id)
+        
+        # 2. Remove from Redis Registry
+        doc_key = f"user:{user_id}:documents"
+        session_store.redis.hdel(doc_key, filename)
+        
+        logger.info(f"User {user_id} deleted document '{filename}' ({count} chunks removed).")
+        return {"message": f"Document '{filename}' deleted successfully", "chunks_removed": count}
+    except Exception as e:
+        logger.error(f"Deletion failed for document '{filename}': {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/cache")
 async def clear_cache():
     """Flushes the semantic cache index."""
