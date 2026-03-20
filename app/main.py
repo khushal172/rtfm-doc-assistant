@@ -273,28 +273,33 @@ async def delete_brain(brain_id: str, user_id: str = Depends(verify_token)):
     return {"message": f"Brain '{brain_id}' removed from registry"}
 
 @app.get("/debug-index")
-async def debug_index(user_id: str):
-    """Temporary diagnostic endpoint (No Auth) to inspect raw vector metadata."""
+async def debug_index(user_id: Optional[str] = None):
+    """Broad diagnostic endpoint to inspect raw vector metadata."""
     try:
-        # Search for first 20 vectors for this user
         dummy_emb = [0.0] * 1536
+        filter_str = f"user_id = '{user_id}'" if user_id else ""
+        
+        logger.info(f"DEBUG INDEX CALL: user_id={user_id}, filter='{filter_str}'")
+        
         results = vector_store.index.query(
             vector=dummy_emb,
-            top_k=20,
+            top_k=50,
             include_metadata=True,
-            filter=f"user_id = '{user_id}'"
+            filter=filter_str if filter_str else None
         )
+        
         return {
+            "requested_user_id": user_id,
             "count": len(results),
             "results": [
                 {
                     "id": r.id,
-                    "score": r.score,
                     "metadata": r.metadata
                 } for r in results
             ]
         }
     except Exception as e:
+        logger.error(f"Debug index failed: {e}")
         return {"error": str(e)}
 
 @app.delete("/cache")
