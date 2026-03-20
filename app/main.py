@@ -272,6 +272,31 @@ async def delete_brain(brain_id: str, user_id: str = Depends(verify_token)):
     session_store.redis.srem(brains_key, brain_id)
     return {"message": f"Brain '{brain_id}' removed from registry"}
 
+@app.get("/debug-index")
+async def debug_index(user_id: str = Depends(verify_token)):
+    """Diagnostic endpoint to inspect raw vector metadata."""
+    try:
+        # Search for first 10 vectors for this user
+        dummy_emb = [0.0] * 1536
+        results = vector_store.index.query(
+            vector=dummy_emb,
+            top_k=10,
+            include_metadata=True,
+            filter=f"user_id = '{user_id}'"
+        )
+        return {
+            "count": len(results),
+            "results": [
+                {
+                    "id": r.id,
+                    "score": r.score,
+                    "metadata": r.metadata
+                } for r in results
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.delete("/cache")
 async def clear_cache():
     """Flushes the semantic cache index."""

@@ -4,6 +4,9 @@ from typing import List, Dict, Any
 from upstash_vector import Index
 from app.config import settings
 
+import logging
+logger = logging.getLogger("uvicorn.error")
+
 class VectorStore:
     """Wrapper around Upstash Serverless Vector Database."""
     def __init__(self):
@@ -61,6 +64,7 @@ class VectorStore:
         if brain_id: filters.append(f"brain_id = '{brain_id}'")
         
         filter_str = " AND ".join(filters) if filters else ""
+        logger.info(f"Vector search: filter='{filter_str}', top_k={fetch_k}")
         
         results = self.index.query(
             vector=query_embedding,
@@ -68,6 +72,9 @@ class VectorStore:
             include_metadata=True,
             filter=filter_str
         )
+        logger.info(f"Vector search returned {len(results)} results")
+        for i, res in enumerate(results[:3]):
+            logger.debug(f"Result {i}: id={res.id}, score={res.score}, meta_keys={list(res.metadata.keys()) if res.metadata else 'None'}")
         
         metadata_list = [res.metadata for res in results if res.metadata and "text" in res.metadata]
         
