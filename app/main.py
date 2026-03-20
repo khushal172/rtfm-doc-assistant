@@ -16,6 +16,7 @@ from app.session import SessionStore
 from app.memory import LongTermMemory
 from app.logging_config import logger
 from app.auth import verify_token
+from app.github_service import GithubService
 
 app = FastAPI(title="RTFM Agent API", version="0.1.0")
 
@@ -98,6 +99,64 @@ async def ingest_document(
     except Exception as e:
         logger.error(f"Ingestion failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ingest-github")
+async def ingest_github(
+    url: str,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_token),
+    x_brain_id: str = Header("default"),
+    github_token: Optional[str] = Header(None)
+):
+    """Triggers background ingestion of a public GitHub repository."""
+    gh = GithubService(token=github_token)
+    try:
+        repo_info = gh.parse_github_url(url)
+        logger.info(f"GitHub Ingest Triggered: {repo_info['owner']}/{repo_info['repo']} for user {user_id}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid GitHub URL: {str(e)}")
+
+    async def background_ingest():
+        try:
+            tree = await gh.get_recursive_tree(**repo_info)
+            files_to_index = [item for item in tree if gh.should_index(item["path"])]
+            logger.info(f"Indexing {len(files_to_index)} files from GitHub starting...")
+            
+            for i, item in enumerate(files_to_index):
+                path = item["path"]
+                content = await gh.get_file_content(repo_info["owner"], repo_info["repo"], path)
+                if not content:
+                    continue
+                    
+                chunks = chunker.chunk_text(content, source=path)
+                embeddings = embedder.embed_texts([c["text"] for c in chunks])
+                
+                vector_store.upsert_chunks(
+                    chunks, 
+                    embeddings, 
+                    version=f"github-{repo_info['branch']}", 
+                    brain_id=x_brain_id, 
+                    user_id=user_id
+                )
+                
+                # Update registry
+                doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
+                doc_info = {
+                    "filename": path,
+                    "version": f"github-{repo_info['branch']}",
+                    "ingested_at": datetime.utcnow().isoformat() + "Z"
+                }
+                session_store.redis.hset(doc_key, path, json.dumps(doc_info))
+                
+                if (i + 1) % 10 == 0:
+                    logger.info(f"GitHub Ingest Progress: {i+1}/{len(files_to_index)} files completed.")
+                    
+            logger.info(f"GitHub Ingest Complete for {repo_info['owner']}/{repo_info['repo']}.")
+        except Exception as e:
+            logger.error(f"Background GitHub Ingest failed: {e}", exc_info=True)
+
+    background_tasks.add_task(background_ingest)
+    return {"message": "GitHub ingestion started in background", "repo": f"{repo_info['owner']}/{repo_info['repo']}"}
 
 @app.post("/chat")
 async def chat(
