@@ -15,34 +15,41 @@ class SemanticCache:
         )
         self.threshold = 0.85  # Cosine similarity > 85% is considered a hit
 
-    def check(self, query_emb: List[float]) -> Optional[str]:
-        """Looks up the query embedding in the vector database to find semantically identical questions."""
+    def check(self, query_emb: List[float], user_id: str, brain_id: str = "default") -> Optional[str]:
+        """Looks up the query embedding in the vector database with isolation filters."""
+        filter_str = f"user_id = '{user_id}' AND brain_id = '{brain_id}' AND type = 'cache'"
+        
         results = self.vs.index.query(
             vector=query_emb,
-            top_k=5, # Fetch top 5 just to guarantee we bypass dense document regions
-            include_metadata=True
+            top_k=1, # We only need the best match for cache
+            include_metadata=True,
+            filter=filter_str
         )
         
         for res in results:
-            # We prefix cache IDs with 'cache::' so they are easily distinguishable from document chunks
-            if str(res.id).startswith("cache::"):
-                if res.score >= self.threshold:
-                    self.redis.incr("rtfm:metrics:cache_hits")
-                    return res.metadata["answer"]
+            if res.score >= self.threshold:
+                self.redis.incr("rtfm:metrics:cache_hits")
+                return res.metadata["answer"]
                     
         self.redis.incr("rtfm:metrics:cache_misses")
         return None
 
-    def put(self, query: str, query_emb: List[float], answer: str):
-        """Saves a successful LLM answer into the vector database cache."""
+    def put(self, query: str, query_emb: List[float], answer: str, user_id: str, brain_id: str = "default"):
+        """Saves a successful LLM answer into the isolated vector database cache."""
         h = hashlib.sha256(query.encode()).hexdigest()
-        vec_id = f"cache::{h}"
+        # Use isolated ID format
+        vec_id = f"cache::{user_id}::{brain_id}::{h}"
         
         self.vs.index.upsert(
-            vectors=[(vec_id, query_emb, {"type": "cache", "answer": answer})]
+            vectors=[(vec_id, query_emb, {
+                "type": "cache", 
+                "answer": answer,
+                "user_id": user_id,
+                "brain_id": brain_id
+            })]
         )
-        # Keep track of the key so we can mass-delete the cache later if needed
-        self.redis.sadd("rtfm:cache_keys", vec_id)
+        # Keep track of the key for cleanup
+        self.redis.sadd(f"rtfm:cache_keys:{user_id}:{brain_id}", vec_id)
 
     def clear(self):
         """Flushes the semantic cache."""

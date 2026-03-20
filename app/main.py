@@ -54,7 +54,6 @@ async def ingest_document(
     user_id: str = Depends(verify_token),
     x_brain_id: str = Header("default")
 ):
-    """Ingests a markdown or text file, chunks it, embeds it, and saves to Upstash."""
     logger.info(f"INGEST: user={user_id}, brain={x_brain_id}, file={file.filename}")
     if not file.filename:
         logger.warning(f"Ingest call rejected for user {user_id}: No file provided")
@@ -65,6 +64,9 @@ async def ingest_document(
     try:
         content = await file.read()
         text = content.decode("utf-8")
+        with open("ingest_trace.txt", "a") as f:
+            f.write(f"{datetime.utcnow().isoformat()} - CONTENT READ: {len(text)} chars\n")
+        
         chunks = chunker.chunk_text(text, source=file.filename)
         
         texts_to_embed = [c["text"] for c in chunks]
@@ -112,7 +114,7 @@ async def chat(
         # 1. Check Cache (Graceful Degradation)
         cached_answer = None
         try:
-            cached_answer = semantic_cache.check(query_emb)
+            cached_answer = semantic_cache.check(query_emb, user_id=user_id, brain_id=x_brain_id)
         except Exception as e:
             logger.warning(f"Semantic Cache checking failed: {e}. Degrading gracefully.")
 
@@ -169,7 +171,11 @@ async def chat(
             
             # If we found stale docs, prepend a warning to the stream (or add to prompt)
             if stale_docs:
-                warning = f"⚠️ *Note: Some information is from older versions ({', '.join([f'{d['source']} v{d['using']}' for d in stale_docs])}). Newer versions are available.* \n\n"
+                warning = "> ⚠️ **Stale Data Warning**\n"
+                warning += "> Some information may be out of date. Documents being used:\n"
+                for d in stale_docs:
+                    warning += f"> - **{d['source']}**: using v{d['using'].split('-')[-1] if '-' in d['using'] else d['using']} (latest: v{d['latest'].split('-')[-1] if '-' in d['latest'] else d['latest']})\n"
+                warning += "\n"
                 yield warning
                 full_answer.append(warning)
 
@@ -182,7 +188,7 @@ async def chat(
             
             # Post-Process tasks
             try:
-                semantic_cache.put(request.question, query_emb, final_ans)
+                semantic_cache.put(request.question, query_emb, final_ans, user_id=user_id, brain_id=x_brain_id)
                 session_store.add_message(actual_session_id, "user", request.question)
                 session_store.add_message(actual_session_id, "assistant", final_ans)
             except Exception as e:
@@ -282,7 +288,8 @@ async def debug_index(passcode: str = None):
         return {"error": "Invalid passcode. Use ?passcode=antigravity"}
         
     try:
-        # Fetch the first 100 vectors in the index
+        # Fetch index info and first 100 vectors
+        info = vector_store.index.info()
         results = vector_store.index.range(
             cursor="0", 
             limit=100,
@@ -290,7 +297,13 @@ async def debug_index(passcode: str = None):
             include_vectors=False
         )
         return {
-            "total_vectors": 259,
+            "index_info": {
+                "vector_count": info.vector_count,
+                "pending_vector_count": info.pending_vector_count,
+                "index_size": info.index_size,
+                "dimension": info.dimension,
+                "similarity_function": info.similarity_function
+            },
             "count": len(results.vectors),
             "vectors": [
                 {

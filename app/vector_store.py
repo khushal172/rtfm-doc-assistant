@@ -45,6 +45,8 @@ class VectorStore:
                 brain_id=b_id,
                 user_id=u_id
             )
+            with open("ingest_trace.txt", "a") as f:
+                f.write(f"{datetime.utcnow().isoformat()} - GENERATED ID: {vec_id}\n")
             
             # Combine text into metadata
             meta = chunk["metadata"].copy()
@@ -57,18 +59,18 @@ class VectorStore:
             vectors.append((vec_id, emb, meta))
             
         logger.info(f"SUCCESS: Upserting {len(vectors)} vectors | user='{u_id}' | brain='{b_id}' | meta_keys={list(vectors[0][2].keys())}")
-        self.index.upsert(vectors=vectors)
+        res = self.index.upsert(vectors=vectors)
 
     def search(self, query_embedding: List[float], top_k: int = 5, query_text: str = None, user_id: str = None, brain_id: str = "default") -> List[Dict[str, Any]]:
         """Searches the vector store using KNN and applies keyword boosting. Supports user_id and brain_id isolation."""
         fetch_k = top_k * 3 if query_text else top_k
         
         # Build filter for user_id and brain_id
-        filters = []
-        if user_id: filters.append(f"user_id = '{user_id}'")
-        if brain_id: filters.append(f"brain_id = '{brain_id}'")
+        u_id = user_id or "anonymous"
+        b_id = brain_id or "default"
+        filters = [f"user_id = '{u_id}'", f"brain_id = '{b_id}'"]
         
-        filter_str = " AND ".join(filters) if filters else ""
+        filter_str = " AND ".join(filters)
         logger.info(f"Vector search: filter='{filter_str}', top_k={fetch_k}")
         
         results = self.index.query(
