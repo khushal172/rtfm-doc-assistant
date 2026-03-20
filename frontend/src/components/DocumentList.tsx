@@ -29,6 +29,10 @@ export function DocumentList() {
       }
     };
     fetchDocs();
+
+    // Listen for custom ingestion events
+    window.addEventListener("document-ingested", fetchDocs);
+    return () => window.removeEventListener("document-ingested", fetchDocs);
   }, [getToken]);
 
   if (isLoading) return <div className="animate-pulse text-[10px] uppercase tracking-widest opacity-30">Loading Registry...</div>;
