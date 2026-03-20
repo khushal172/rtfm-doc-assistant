@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -10,6 +10,7 @@ from app.cache import SemanticCache
 
 from typing import Optional
 from app.session import SessionStore
+from app.memory import LongTermMemory
 
 app = FastAPI(title="RTFM Agent API", version="0.1.0")
 
@@ -20,6 +21,7 @@ vector_store = VectorStore()
 llm = LLMService()
 semantic_cache = SemanticCache(vector_store)
 session_store = SessionStore()
+ltm = LongTermMemory(vector_store, embedder)
 
 class ChatRequest(BaseModel):
     question: str
@@ -54,8 +56,8 @@ async def ingest_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
-async def chat(request: ChatRequest):
-    """Retrieves relevant context and answers the user's question via streaming. Implements Semantic Caching & Memory."""
+async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
+    """Retrieves relevant context and answers the user's question via streaming. Implements Caching & Memory."""
     try:
         # 1. Embed Question
         query_emb = embedder.embed_text(request.question)
@@ -74,13 +76,16 @@ async def chat(request: ChatRequest):
         # 3. Fetch Session History
         history = session_store.get_history(request.session_id) if request.session_id else []
         
-        # 4. Search Document Chunks
+        # 4. Fetch Long Term Memories
+        memories = ltm.retrieve_memories(query_emb)
+        
+        # 5. Search Document Chunks
         retrieved_chunks = vector_store.search(query_emb, top_k=5)
         
-        # 5. Generate Stream and intercept
+        # 6. Generate Stream and intercept
         def event_stream():
             full_answer = []
-            stream = llm.stream_answer(request.question, retrieved_chunks, history)
+            stream = llm.stream_answer(request.question, retrieved_chunks, history, memories)
             for chunk_text in stream:
                 full_answer.append(chunk_text)
                 yield chunk_text
@@ -91,6 +96,14 @@ async def chat(request: ChatRequest):
             if request.session_id:
                 session_store.add_message(request.session_id, "user", request.question)
                 session_store.add_message(request.session_id, "assistant", final_ans)
+            
+            # Memory Extraction in background so user doesn't wait!
+            def background_process_memory():
+                fact = ltm.extract_fact(request.question, final_ans)
+                if fact:
+                    ltm.save_memory(request.session_id or "anonymous", fact)
+            
+            background_tasks.add_task(background_process_memory)
                 
         return StreamingResponse(event_stream(), media_type="text/plain")
     except Exception as e:
