@@ -20,28 +20,24 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
         if (!token) return;
         const currentStatus = await getIngestStatus(token);
         
+        console.log("Current ingest status:", currentStatus); // Debug log
+
         if (currentStatus && currentStatus.status !== "idle") {
           setProgress(currentStatus);
-          if (currentStatus.status === "completed") {
-            setLoading(false);
-            // Optional: Clear progress after a few seconds or keep it to show success
-          } else {
+          // Only force loading to true if it's actually running
+          if (currentStatus.status === "indexing") {
             setLoading(true);
+          } else if (currentStatus.status === "completed") {
+            setLoading(false);
           }
-        } else {
-          setProgress(null);
         }
       } catch (err) {
         console.error("Status polling failed:", err);
       }
     };
 
-    // Initial check
     checkStatus();
-
-    // Poll every 3 seconds
     interval = setInterval(checkStatus, 3000);
-
     return () => clearInterval(interval);
   }, [getToken]);
 
@@ -53,7 +49,7 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
     try {
       const token = await getToken();
       await ingestGithub(url, token!, activeBrainId, pat || undefined);
-      setStatus(null); // Clear manual status in favor of progress bar
+      setStatus(null);
       setUrl("");
     } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -72,12 +68,12 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
         </p>
       </div>
 
-      {progress && (
-        <div className="p-6 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
+      {progress && progress.status !== "idle" && (
+        <div className="p-6 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 space-y-4">
            <div className="flex items-start justify-between">
               <div className="space-y-1">
                 <p className="text-[10px] uppercase tracking-widest font-bold text-indigo-400">Current Synchronization</p>
-                <p className="text-sm font-semibold truncate max-w-[300px]">{progress.repo}</p>
+                <p className="text-sm font-semibold truncate max-w-[300px]">{progress.repo || "Unknown Repo"}</p>
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-indigo-300">{percent}%</p>
@@ -85,16 +81,16 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
               </div>
            </div>
 
-           <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+           <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-gradient-to-r from-indigo-600 to-violet-500 transition-all duration-1000 ease-out"
+                className="h-full bg-indigo-500 transition-all duration-500"
                 style={{ width: `${percent}%` }}
               ></div>
            </div>
 
-           <div className="flex justify-between items-center text-[10px] font-medium opacity-60 italic">
+           <div className="flex justify-between items-center text-[10px] font-medium opacity-60">
               <span>{progress.processed_files} / {progress.total_files} files indexed</span>
-              <span className="capitalize px-2 py-0.5 rounded-full bg-white/5">{progress.status}</span>
+              <span className="capitalize px-2 py-0.5 rounded-full bg-white/10 border border-white/10">{progress.status}</span>
            </div>
         </div>
       )}
