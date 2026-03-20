@@ -2,6 +2,7 @@ import { ChatWindow } from "@/components/ChatWindow";
 import { FileUpload } from "@/components/FileUpload";
 import { MetricsDisplay } from "@/components/MetricsDisplay";
 import { Navbar } from "@/components/Navbar";
+import { DocumentList } from "@/components/DocumentList";
 
 export default function Home() {
   return (
@@ -16,6 +17,7 @@ export default function Home() {
       <div className="flex flex-col lg:flex-row gap-12 w-full max-w-6xl items-start justify-center">
         <div className="flex flex-col gap-8 w-full lg:w-1/3">
           <FileUpload />
+          <DocumentList />
           <MetricsDisplay />
         </div>
         

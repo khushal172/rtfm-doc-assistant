@@ -34,9 +34,10 @@ export async function* streamChat(question: string, token: string, sessionId?: s
   }
 }
 
-export async function ingestDocument(file: File, token: string) {
+export async function ingestDocument(file: File, token: string, version?: string) {
   const formData = new FormData();
   formData.append("file", file);
+  if (version) formData.append("version", version);
 
   const response = await fetch(`${API_BASE_URL}/ingest`, {
     method: "POST",
@@ -60,5 +61,15 @@ export async function getMetrics(token: string) {
     }
   });
   if (!response.ok) return null;
+  return await response.json();
+}
+
+export async function listDocuments(token: string) {
+  const response = await fetch(`${API_BASE_URL}/documents`, {
+    headers: {
+      "Authorization": `Bearer ${token}`
+    }
+  });
+  if (!response.ok) return [];
   return await response.json();
 }
