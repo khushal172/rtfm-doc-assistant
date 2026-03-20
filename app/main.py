@@ -328,7 +328,7 @@ async def list_documents(user_id: str = Depends(verify_token), x_brain_id: str =
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/documents/{filename}")
+@app.delete("/documents/{filename:path}")
 async def delete_document(filename: str, user_id: str = Depends(verify_token), x_brain_id: str = Header("default")):
     """Deletes a document and all its chunks from the vector store and registry for a specific brain."""
     try:
