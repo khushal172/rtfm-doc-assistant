@@ -75,3 +75,23 @@ class VectorStore:
             metadata_list = sorted(metadata_list, key=lambda x: x.get("_boost_score", 0), reverse=True)
             
         return metadata_list[:top_k]
+
+    def delete_chunks(self, filename: str, user_id: str):
+        """
+        Deletes all chunks associated with a specific file and user.
+        Query for IDs first, then delete.
+        """
+        # Query for all IDs matching the metadata
+        dummy_emb = [0.0] * 1536
+        res = self.index.query(
+            vector=dummy_emb,
+            top_k=1000, 
+            include_metadata=False,
+            filter=f"source = '{filename}' AND user_id = '{user_id}'"
+        )
+        
+        ids_to_delete = [r.id for r in res]
+        if ids_to_delete:
+            self.index.delete(ids=ids_to_delete)
+            return len(ids_to_delete)
+        return 0

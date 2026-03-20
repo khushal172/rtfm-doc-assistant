@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { listDocuments } from "@/lib/api";
+import { listDocuments, deleteDocument } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
 
 interface DocumentMetadata {
@@ -35,6 +35,18 @@ export function DocumentList() {
     return () => window.removeEventListener("document-ingested", fetchDocs);
   }, [getToken]);
 
+  const handleDelete = async (filename: string) => {
+    if (!confirm(`Are you sure you want to delete ${filename}?`)) return;
+    try {
+      const token = await getToken();
+      if (!token) return;
+      await deleteDocument(filename, token);
+      setDocs(docs.filter(d => d.filename !== filename));
+    } catch (e) {
+      console.error("Delete failed", e);
+    }
+  };
+
   if (isLoading) return <div className="animate-pulse text-[10px] uppercase tracking-widest opacity-30">Loading Registry...</div>;
 
   return (
@@ -63,7 +75,15 @@ export function DocumentList() {
                   v{doc.version} • {new Date(doc.ingested_at).toLocaleTimeString()}
                 </span>
               </div>
-              <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-lg shadow-indigo-500/40"></div>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => handleDelete(doc.filename)}
+                  className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-500/10 rounded-lg text-red-400/60 hover:text-red-400 transition-all"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </button>
+                <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-lg shadow-indigo-500/40"></div>
+              </div>
             </div>
           ))}
         </div>
