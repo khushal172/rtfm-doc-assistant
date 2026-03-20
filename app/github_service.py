@@ -27,20 +27,23 @@ class GithubService:
             
         return {"owner": owner, "repo": repo, "branch": branch}
 
+    async def _resolve_branch(self, owner: str, repo: str, branch: Optional[str] = None) -> str:
+        """Determines the correct branch to use, defaulting to the repo's default_branch."""
+        if branch and branch != "main":
+            return branch
+            
+        async with httpx.AsyncClient() as client:
+            repo_url = f"https://api.github.com/repos/{owner}/{repo}"
+            repo_res = await client.get(repo_url, headers=self.headers)
+            if repo_res.status_code == 200:
+                return repo_res.json().get("default_branch", "main")
+            return "main"
+
     async def get_recursive_tree(self, owner: str, repo: str, branch: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fetches the recursive file tree for a repository, detecting the default branch if needed."""
+        branch = await self._resolve_branch(owner, repo, branch)
+        
         async with httpx.AsyncClient() as client:
-            # 1. Resolve Branch if not provided
-            if not branch or branch == "main":
-                repo_url = f"https://api.github.com/repos/{owner}/{repo}"
-                repo_res = await client.get(repo_url, headers=self.headers)
-                if repo_res.status_code == 200:
-                    branch = repo_res.json().get("default_branch", "main")
-                else:
-                    logger.warning(f"Could not fetch repo metadata for {owner}/{repo}. Defaulting to 'main'.")
-                    branch = branch or "main"
-
-            # 2. Fetch Tree
             url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
             response = await client.get(url, headers=self.headers)
             if response.status_code != 200:
@@ -48,17 +51,17 @@ class GithubService:
                 raise Exception(f"Failed to fetch repo tree (branch: {branch}): {response.status_code}")
                 
             data = response.json()
-            # We only care about blobs (files), not trees (folders)
             return [item for item in data.get("tree", []) if item.get("type") == "blob"]
 
-    async def download_repo_zip(self, owner: str, repo: str, branch: str = "main") -> bytes:
+    async def download_repo_zip(self, owner: str, repo: str, branch: Optional[str] = None) -> bytes:
         """Downloads the entire repository as a ZIP archive."""
+        branch = await self._resolve_branch(owner, repo, branch)
         url = f"https://api.github.com/repos/{owner}/{repo}/zipball/{branch}"
         async with httpx.AsyncClient(follow_redirects=True) as client:
             response = await client.get(url, headers=self.headers)
             if response.status_code != 200:
                 logger.error(f"GitHub ZIP Download failed ({response.status_code}): {response.text}")
-                raise Exception(f"Failed to download repo ZIP: {response.status_code}")
+                raise Exception(f"Failed to download repo ZIP (branch: {branch}): {response.status_code}")
             return response.content
 
     def should_index(self, path: str) -> bool:
