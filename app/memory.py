@@ -36,24 +36,25 @@ Extracted Fact (or NONE):"""
         except Exception:
             return None
 
-    def save_memory(self, session_id: str, fact: str):
-        """Embeds and saves the extracted fact to the vector index."""
+    def save_memory(self, user_id: str, fact: str):
+        """Embeds and saves the extracted fact to the vector index, tied to a user_id."""
         if not fact: return
         
         emb = self.embedder.embed_text(fact)
         h = hashlib.sha256(fact.encode()).hexdigest()
-        vec_id = f"memory::{session_id}::{h}"
+        vec_id = f"memory::{user_id}::{h}"
         
         self.vs.index.upsert(
-            vectors=[(vec_id, emb, {"type": "memory", "fact": fact})]
+            vectors=[(vec_id, emb, {"type": "memory", "fact": fact, "user_id": user_id})]
         )
 
-    def retrieve_memories(self, query_emb: List[float], top_k: int = 3) -> List[str]:
-        """Finds relevant past facts conceptually related to the current query."""
+    def retrieve_memories(self, query_emb: List[float], user_id: str, top_k: int = 3) -> List[str]:
+        """Finds relevant past facts conceptually related to the current query, filtered by user_id."""
         results = self.vs.index.query(
             vector=query_emb,
             top_k=top_k + 5, # Overfetch to bypass other chunk types
-            include_metadata=True
+            include_metadata=True,
+            filter=f"user_id = '{user_id}'"
         )
         memories = []
         for res in results:

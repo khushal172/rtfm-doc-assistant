@@ -118,23 +118,17 @@ async def chat(
         # 3. Fetch Long Term Memories for this user
         memories = []
         try:
-            # We filter by user_id in retrieval (Note: LTM needs updated to support filters)
-            memories = ltm.retrieve_memories(query_emb)
+            memories = ltm.retrieve_memories(query_emb, user_id)
         except Exception as e:
             logger.warning(f"Long term memory retrieval failed: {e}. Degrading gracefully.")
         
         # 4. Hybrid Search Document Chunks (Isolated by user_id)
-        # Note: VectorStore search needs to support metadata filters for true isolation
-        retrieved_chunks = vector_store.search(query_emb, top_k=5, query_text=request.question)
-        
-        # Filter retrieved chunks by user_id to ensure privacy
-        # (This is a safety check; eventually move to server-side metadata filters)
-        isolated_chunks = [c for c in retrieved_chunks if c.get("user_id") == user_id]
+        retrieved_chunks = vector_store.search(query_emb, top_k=5, query_text=request.question, user_id=user_id)
         
         # 5. Generate Stream
         def event_stream():
             full_answer = []
-            stream = llm.stream_answer(request.question, isolated_chunks, history, memories)
+            stream = llm.stream_answer(request.question, retrieved_chunks, history, memories)
             for chunk_text in stream:
                 full_answer.append(chunk_text)
                 yield chunk_text
