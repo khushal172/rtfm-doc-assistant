@@ -15,6 +15,11 @@ export function ChatWindow() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Clear chat when switching brains
+  useEffect(() => {
+    setMessages([]);
+  }, [activeBrainId]);
+
   useEffect(() => {
     if (scrollRef.current) {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -38,7 +43,7 @@ export function ChatWindow() {
       const aiMsg: ChatMessage = { role: "assistant", content: "" };
       setMessages((prev) => [...prev, aiMsg]);
 
-      for await (const chunk of streamChat(input, token, sessionId)) {
+      for await (const chunk of streamChat(input, token, sessionId, activeBrainId)) {
         aiContent += chunk;
         setMessages((prev) => {
           const newMsgs = [...prev];

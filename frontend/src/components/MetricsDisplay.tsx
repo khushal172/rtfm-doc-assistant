@@ -3,9 +3,11 @@
 import React, { useState, useEffect } from "react";
 import { getMetrics } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
+import { useBrain } from "@/context/BrainContext";
 
 export function MetricsDisplay() {
   const { getToken } = useAuth();
+  const { activeBrainId } = useBrain();
   const [metrics, setMetrics] = useState<{ hits: number; misses: number; hit_rate: string } | null>(null);
 
   useEffect(() => {
@@ -14,7 +16,7 @@ export function MetricsDisplay() {
         const token = await getToken();
         if (!token) return;
         
-        const data = await getMetrics(token);
+        const data = await getMetrics(token, activeBrainId);
         setMetrics(data);
       } catch (e) {
         console.error("Metrics fail", e);
@@ -24,7 +26,7 @@ export function MetricsDisplay() {
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 10000); // 10s refresh
     return () => clearInterval(interval);
-  }, [getToken]);
+  }, [getToken, activeBrainId]);
 
   if (!metrics) return null;
 

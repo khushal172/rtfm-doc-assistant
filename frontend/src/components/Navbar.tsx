@@ -1,6 +1,7 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
+import { BrainSelector } from "./BrainSelector";
 
 export function Navbar() {
   return (
