@@ -1,15 +1,18 @@
-"use client";
-
 import React, { useState, useEffect } from "react";
 import { getMetrics } from "@/lib/api";
+import { useAuth } from "@clerk/nextjs";
 
 export function MetricsDisplay() {
+  const { getToken } = useAuth();
   const [metrics, setMetrics] = useState<{ hits: number; misses: number; hit_rate: string } | null>(null);
 
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        const data = await getMetrics();
+        const token = await getToken();
+        if (!token) return;
+        
+        const data = await getMetrics(token);
         setMetrics(data);
       } catch (e) {
         console.error("Metrics fail", e);
@@ -19,7 +22,7 @@ export function MetricsDisplay() {
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 10000); // 10s refresh
     return () => clearInterval(interval);
-  }, []);
+  }, [getToken]);
 
   if (!metrics) return null;
 

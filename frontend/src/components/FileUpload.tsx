@@ -1,9 +1,9 @@
-"use client";
-
 import React, { useState } from "react";
 import { ingestDocument } from "@/lib/api";
+import { useAuth } from "@clerk/nextjs";
 
 export function FileUpload() {
+  const { getToken } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
 
@@ -14,7 +14,10 @@ export function FileUpload() {
     setIsUploading(true);
     setStatus("idle");
     try {
-      await ingestDocument(file);
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
+      
+      await ingestDocument(file, token);
       setStatus("success");
     } catch (error) {
       console.error("Upload error:", error);

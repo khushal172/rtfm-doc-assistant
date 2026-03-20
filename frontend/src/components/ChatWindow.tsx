@@ -1,10 +1,10 @@
-"use client";
-
 import React, { useState, useRef, useEffect } from "react";
 import { ChatMessage, streamChat } from "@/lib/api";
 import { v4 as uuidv4 } from "uuid";
+import { useAuth } from "@clerk/nextjs";
 
 export function ChatWindow() {
+  const { getToken } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sessionId] = useState(() => uuidv4());
@@ -27,11 +27,14 @@ export function ChatWindow() {
     setIsLoading(true);
 
     try {
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
+
       let aiContent = "";
       const aiMsg: ChatMessage = { role: "assistant", content: "" };
       setMessages((prev) => [...prev, aiMsg]);
 
-      for await (const chunk of streamChat(input, sessionId)) {
+      for await (const chunk of streamChat(input, token, sessionId)) {
         aiContent += chunk;
         setMessages((prev) => {
           const newMsgs = [...prev];

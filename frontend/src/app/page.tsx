@@ -1,10 +1,13 @@
 import { ChatWindow } from "@/components/ChatWindow";
 import { FileUpload } from "@/components/FileUpload";
 import { MetricsDisplay } from "@/components/MetricsDisplay";
+import { Navbar } from "@/components/Navbar";
 
 export default function Home() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-between p-8 space-y-12">
+    <div className="min-h-screen flex flex-col">
+      <Navbar />
+      <main className="flex-1 flex flex-col items-center p-8 space-y-12">
       <div className="z-10 max-w-5xl w-full flex flex-col items-center space-y-2">
         <h1 className="text-5xl font-extrabold tracking-tighter gradient-text">RTFM AGENT</h1>
         <p className="text-sm font-mono opacity-50">v0.1.0-alpha // Neural Retrieval Engine</p>
@@ -28,6 +31,7 @@ export default function Home() {
         <span>•</span>
         <span>FASTAPI</span>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }

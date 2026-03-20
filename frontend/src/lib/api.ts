@@ -5,42 +5,22 @@ export interface ChatMessage {
   content: string;
 }
 
-export async function ingestDocument(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch(`${API_BASE_URL}/ingest`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to ingest document");
-  }
-
-  return await response.json();
-}
-
-export async function getMetrics() {
-  const response = await fetch(`${API_BASE_URL}/metrics`);
-  if (!response.ok) return null;
-  return await response.json();
-}
-
 /**
  * Executes a streaming chat request.
- * Since the backend returns raw text (not SSE event prefixes),
- * we read the stream as a raw text body.
  */
-export async function* streamChat(question: string, sessionId?: string) {
+export async function* streamChat(question: string, token: string, sessionId?: string) {
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
     body: JSON.stringify({ question, session_id: sessionId }),
   });
 
   if (!response.ok) {
-    throw new Error("Chat request failed");
+    const errorData = await response.json().catch(() => ({ detail: "Chat request failed" }));
+    throw new Error(errorData.detail || "Chat request failed");
   }
 
   const reader = response.body?.getReader();
@@ -52,4 +32,33 @@ export async function* streamChat(question: string, sessionId?: string) {
     if (done) break;
     yield decoder.decode(value, { stream: true });
   }
+}
+
+export async function ingestDocument(file: File, token: string) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE_URL}/ingest`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to ingest document");
+  }
+
+  return await response.json();
+}
+
+export async function getMetrics(token: string) {
+  const response = await fetch(`${API_BASE_URL}/metrics`, {
+    headers: {
+      "Authorization": `Bearer ${token}`
+    }
+  });
+  if (!response.ok) return null;
+  return await response.json();
 }
