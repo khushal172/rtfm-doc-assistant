@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { listDocuments, deleteDocument } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
+import { useBrain } from "@/context/BrainContext";
 
 interface DocumentMetadata {
   filename: string;
@@ -12,6 +13,7 @@ interface DocumentMetadata {
 
 export function DocumentList() {
   const { getToken } = useAuth();
+  const { activeBrainId } = useBrain();
   const [docs, setDocs] = useState<DocumentMetadata[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -20,7 +22,7 @@ export function DocumentList() {
       try {
         const token = await getToken();
         if (!token) return;
-        const data = await listDocuments(token);
+        const data = await listDocuments(token, activeBrainId);
         setDocs(data);
       } catch (e) {
         console.error("Failed to fetch docs", e);
@@ -33,14 +35,14 @@ export function DocumentList() {
     // Listen for custom ingestion events
     window.addEventListener("document-ingested", fetchDocs);
     return () => window.removeEventListener("document-ingested", fetchDocs);
-  }, [getToken]);
+  }, [getToken, activeBrainId]);
 
   const handleDelete = async (filename: string) => {
     if (!confirm(`Are you sure you want to delete ${filename}?`)) return;
     try {
       const token = await getToken();
       if (!token) return;
-      await deleteDocument(filename, token);
+      await deleteDocument(filename, token, activeBrainId);
       setDocs(docs.filter(d => d.filename !== filename));
     } catch (e) {
       console.error("Delete failed", e);

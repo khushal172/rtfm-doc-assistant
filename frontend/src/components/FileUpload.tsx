@@ -3,9 +3,11 @@
 import React, { useState } from "react";
 import { ingestDocument } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
+import { useBrain } from "@/context/BrainContext";
 
 export function FileUpload() {
   const { getToken } = useAuth();
+  const { activeBrainId } = useBrain();
   const [isUploading, setIsUploading] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
 
@@ -19,7 +21,7 @@ export function FileUpload() {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
       
-      await ingestDocument(file, token);
+      await ingestDocument(file, token, undefined, activeBrainId);
       setStatus("success");
       // Dispatch custom event for real-time UI updates
       window.dispatchEvent(new CustomEvent("document-ingested"));

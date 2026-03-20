@@ -4,9 +4,11 @@ import React, { useState, useRef, useEffect } from "react";
 import { ChatMessage, streamChat } from "@/lib/api";
 import { v4 as uuidv4 } from "uuid";
 import { useAuth } from "@clerk/nextjs";
+import { useBrain } from "@/context/BrainContext";
 
 export function ChatWindow() {
   const { getToken } = useAuth();
+  const { activeBrainId } = useBrain();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sessionId] = useState(() => uuidv4());

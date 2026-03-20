@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { BrainProvider } from "@/context/BrainContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,7 +20,9 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en" className="h-full antialiased">
         <body className={`${inter.className} min-h-full flex flex-col`}>
-          {children}
+          <BrainProvider>
+            {children}
+          </BrainProvider>
         </body>
       </html>
     </ClerkProvider>
