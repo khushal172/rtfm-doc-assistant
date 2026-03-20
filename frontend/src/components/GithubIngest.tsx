@@ -20,15 +20,27 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
         if (!token) return;
         const currentStatus = await getIngestStatus(token);
         
-        console.log("Current ingest status:", currentStatus); // Debug log
+        console.log("Current ingest status:", currentStatus);
 
         if (currentStatus && currentStatus.status !== "idle") {
+          // If we just clicked Sync (loading is true), ignore any "completed" 
+          // status because it MUST be from a previous run.
+          if (loading && currentStatus.status === "completed") {
+            return;
+          }
+
           setProgress(currentStatus);
-          // Only force loading to true if it's actually running
+          
           if (currentStatus.status === "indexing") {
             setLoading(true);
           } else if (currentStatus.status === "completed") {
             setLoading(false);
+          }
+        } else {
+          // If status is idle and we were loading, it means the backend reset the key
+          // but hasn't started indexing yet. Keep loading but clear progress.
+          if (loading) {
+            setProgress(null);
           }
         }
       } catch (err) {
@@ -39,7 +51,7 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
     checkStatus();
     interval = setInterval(checkStatus, 3000);
     return () => clearInterval(interval);
-  }, [getToken]);
+  }, [getToken, loading]);
 
   const handleIngest = async () => {
     if (!url) return;
