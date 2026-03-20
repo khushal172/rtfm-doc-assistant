@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useRef, useEffect } from "react";
 import { ChatMessage, streamChat } from "@/lib/api";
 import { v4 as uuidv4 } from "uuid";

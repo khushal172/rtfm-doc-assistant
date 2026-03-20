@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect } from "react";
 import { getMetrics } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
