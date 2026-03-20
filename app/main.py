@@ -41,11 +41,14 @@ class ChatRequest(BaseModel):
     question: str
     session_id: Optional[str] = None
 
+from fastapi import Header
+
 @app.post("/ingest")
 async def ingest_document(
     file: UploadFile = File(...),
     version: Optional[str] = None,
-    user_id: str = Depends(verify_token)
+    user_id: str = Depends(verify_token),
+    x_brain_id: str = Header("default")
 ):
     """Ingests a markdown or text file, chunks it, embeds it, and saves to Upstash."""
     if not file.filename:
@@ -68,10 +71,10 @@ async def ingest_document(
         texts_to_embed = [c["text"] for c in chunks]
         embeddings = embedder.embed_texts(texts_to_embed)
         
-        vector_store.upsert_chunks(chunks, embeddings, version=doc_version)
+        vector_store.upsert_chunks(chunks, embeddings, version=doc_version, brain_id=x_brain_id)
         
-        # Track document metadata in Redis for easy listing
-        doc_key = f"user:{user_id}:documents"
+        # Track document metadata in Redis for easy listing (segmented by brain)
+        doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
         doc_info = {
             "filename": file.filename,
             "version": doc_version,
@@ -96,13 +99,14 @@ async def ingest_document(
 async def chat(
     request: ChatRequest, 
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(verify_token)
+    user_id: str = Depends(verify_token),
+    x_brain_id: str = Header("default")
 ):
     """Retrieves relevant context and answers the user's question via streaming. Isolated by user_id."""
     try:
-        logger.info(f"User {user_id} processing chat request for session: '{request.session_id}'")
-        # Ensure session ID is globally unique by prefixing user_id
-        actual_session_id = f"{user_id}:{request.session_id}" if request.session_id else user_id
+        logger.info(f"User {user_id} processing chat request for session: '{request.session_id}' in brain: {x_brain_id}")
+        # Ensure session ID is globally unique by prefixing user_id and brain_id
+        actual_session_id = f"{user_id}:{x_brain_id}:{request.session_id}" if request.session_id else f"{user_id}:{x_brain_id}:default"
         
         query_emb = embedder.embed_text(request.question)
         
@@ -132,21 +136,21 @@ async def chat(
         except Exception as e:
             logger.warning(f"Session history retrieval failed: {e}. Degrading gracefully.")
             
-        # 3. Fetch Long Term Memories for this user
+        # 3. Fetch Long Term Memories for this user and brain
         memories = []
         try:
-            memories = ltm.retrieve_memories(query_emb, user_id)
+            memories = ltm.retrieve_memories(query_emb, user_id, brain_id=x_brain_id)
         except Exception as e:
             logger.warning(f"Long term memory retrieval failed: {e}. Degrading gracefully.")
         
-        # 4. Hybrid Search Document Chunks (Isolated by user_id)
-        retrieved_chunks = vector_store.search(query_emb, top_k=5, query_text=request.question, user_id=user_id)
+        # 4. Hybrid Search Document Chunks (Isolated by user_id and brain_id)
+        retrieved_chunks = vector_store.search(query_emb, top_k=5, query_text=request.question, user_id=user_id, brain_id=x_brain_id)
         
         # 4.5 Staleness Detection
         # Check if any retrieved chunks are older than the latest version in Redis
         stale_docs = []
         try:
-            doc_key = f"user:{user_id}:documents"
+            doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
             registry = session_store.redis.hgetall(doc_key)
             
             for chunk in retrieved_chunks:
@@ -194,8 +198,8 @@ async def chat(
                 try:
                     fact = ltm.extract_fact(request.question, final_ans)
                     if fact:
-                        # Tie memory to user_id
-                        ltm.save_memory(user_id, fact)
+                        # Tie memory to user_id and brain_id
+                        ltm.save_memory(user_id, fact, brain_id=x_brain_id)
                 except Exception as e:
                     logger.error(f"Background Fact Extraction failed: {e}")
             background_tasks.add_task(background_process_memory)
@@ -214,10 +218,10 @@ async def get_metrics(user_id: str = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/documents")
-async def list_documents(user_id: str = Depends(verify_token)):
-    """Returns a list of all ingested documents and their current versions for the user."""
+async def list_documents(user_id: str = Depends(verify_token), x_brain_id: str = Header("default")):
+    """Returns a list of all ingested documents and their current versions for the user and brain."""
     try:
-        doc_key = f"user:{user_id}:documents"
+        doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
         docs = session_store.redis.hgetall(doc_key)
         
         result = []
@@ -229,17 +233,17 @@ async def list_documents(user_id: str = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/documents/{filename}")
-async def delete_document(filename: str, user_id: str = Depends(verify_token)):
-    """Deletes a document and all its chunks from the vector store and registry."""
+async def delete_document(filename: str, user_id: str = Depends(verify_token), x_brain_id: str = Header("default")):
+    """Deletes a document and all its chunks from the vector store and registry for a specific brain."""
     try:
         # 1. Purge from Vector Store
-        count = vector_store.delete_chunks(filename, user_id)
+        count = vector_store.delete_chunks(filename, user_id, brain_id=x_brain_id)
         
         # 2. Remove from Redis Registry
-        doc_key = f"user:{user_id}:documents"
+        doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
         session_store.redis.hdel(doc_key, filename)
         
-        logger.info(f"User {user_id} deleted document '{filename}' ({count} chunks removed).")
+        logger.info(f"User {user_id} deleted document '{filename}' from brain '{x_brain_id}' ({count} chunks removed).")
         return {"message": f"Document '{filename}' deleted successfully", "chunks_removed": count}
     except Exception as e:
         logger.error(f"Deletion failed for document '{filename}': {e}")
