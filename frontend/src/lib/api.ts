@@ -35,7 +35,7 @@ export async function* streamChat(question: string, token: string, sessionId?: s
   }
 }
 
-export async function ingestDocument(file: File, token: string, version?: string) {
+export async function ingestDocument(file: File, token: string, version?: string, brainId?: string) {
   const formData = new FormData();
   formData.append("file", file);
   if (version) formData.append("version", version);
@@ -56,7 +56,7 @@ export async function ingestDocument(file: File, token: string, version?: string
   return await response.json();
 }
 
-export async function getMetrics(token: string) {
+export async function getMetrics(token: string, brainId?: string) {
   const response = await fetch(`${API_BASE_URL}/metrics`, {
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -67,7 +67,7 @@ export async function getMetrics(token: string) {
   return await response.json();
 }
 
-export async function listDocuments(token: string) {
+export async function listDocuments(token: string, brainId?: string) {
   const response = await fetch(`${API_BASE_URL}/documents`, {
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -77,6 +77,7 @@ export async function listDocuments(token: string) {
   if (!response.ok) return [];
   return await response.json();
 }
+
 export async function deleteDocument(filename: string, token: string, brainId: string = "default") {
   const response = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(filename)}`, {
     method: "DELETE",
@@ -87,4 +88,28 @@ export async function deleteDocument(filename: string, token: string, brainId: s
   });
   if (!response.ok) throw new Error("Failed to delete document");
   return await response.json();
+}
+
+export async function listBrains(token: string) {
+  const response = await fetch(`${API_BASE_URL}/brains`, {
+    headers: { "Authorization": `Bearer ${token}` }
+  });
+  if (!response.ok) return ["default"];
+  return await response.json();
+}
+
+export async function createBrain(brainId: string, token: string) {
+  const response = await fetch(`${API_BASE_URL}/brains/${encodeURIComponent(brainId)}`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}` }
+  });
+  return await response.ok;
+}
+
+export async function deleteBrain(brainId: string, token: string) {
+  const response = await fetch(`${API_BASE_URL}/brains/${encodeURIComponent(brainId)}`, {
+    method: "DELETE",
+    headers: { "Authorization": `Bearer ${token}` }
+  });
+  return await response.ok;
 }
