@@ -207,6 +207,10 @@ async def ingest_github(
         except Exception as e:
             logger.error(f"Background GitHub Ingest failed: {e}", exc_info=True)
 
+    # Proactively clear/reset progress state so the UI doesn't see old 100% data
+    progress_key = f"rtfm:ingest:{user_id}:progress"
+    session_store.redis.delete(progress_key)
+
     background_tasks.add_task(background_ingest)
     return {"message": "GitHub ingestion started in background", "repo": f"{repo_info['owner']}/{repo_info['repo']}"}
 

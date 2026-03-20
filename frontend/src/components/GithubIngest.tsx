@@ -44,6 +44,7 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
   const handleIngest = async () => {
     if (!url) return;
     setLoading(true);
+    setProgress(null); // Immediately clear old progress card
     setStatus("Initiating GitHub synchronization...");
     
     try {
