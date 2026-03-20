@@ -37,11 +37,10 @@ export function GithubIngest({ activeBrainId }: { activeBrainId: string }) {
             setLoading(false);
           }
         } else {
-          // If status is idle and we were loading, it means the backend reset the key
-          // but hasn't started indexing yet. Keep loading but clear progress.
-          if (loading) {
-            setProgress(null);
-          }
+          // IMPORTANT: If status is idle, clear the progress card!
+          setProgress(null);
+          // If we were loading, but status is idle, it means we are in the 
+          // gap between delete and the new indexing start. Keep loading state.
         }
       } catch (err) {
         console.error("Status polling failed:", err);

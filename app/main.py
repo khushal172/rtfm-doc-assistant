@@ -199,6 +199,7 @@ async def ingest_github(
                             if i == len(files_to_index) - 1:
                                 progress_data["status"] = "completed"
                             session_store.redis.set(progress_key, json.dumps(progress_data))
+                            session_store.redis.expire(progress_key, 600)  # Expire after 10 mins
                             
                     except Exception as file_err:
                         logger.warning(f"Failed to process file {file_path}: {file_err}")
