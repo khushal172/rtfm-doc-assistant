@@ -114,3 +114,20 @@ export async function deleteBrain(brainId: string, token: string) {
   });
   return await response.ok;
 }
+
+export async function ingestGithub(repoUrl: string, token: string, brainId: string = "default", githubToken?: string) {
+  const response = await fetch(`${API_BASE_URL}/ingest-github?url=${encodeURIComponent(repoUrl)}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "X-Brain-Id": brainId,
+      ...(githubToken ? { "github-token": githubToken } : {})
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to start GitHub ingestion");
+  }
+
+  return await response.json();
+}

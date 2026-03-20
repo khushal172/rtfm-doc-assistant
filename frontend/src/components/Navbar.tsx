@@ -14,6 +14,11 @@ export function Navbar() {
         </Link>
         
         <div className="flex items-center gap-6">
+            <div className="hidden md:flex items-center gap-6 mr-4 opacity-60 hover:opacity-100 transition-opacity">
+               <Link href="/github" className="text-[10px] uppercase tracking-widest font-bold hover:text-indigo-400 transition-colors">
+                  GitHub Intelligence
+               </Link>
+            </div>
            <div className="hidden md:flex items-center gap-4 text-[10px] uppercase tracking-widest opacity-40">
               <span>Secure Session</span>
               <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
