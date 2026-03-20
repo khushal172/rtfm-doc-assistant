@@ -45,17 +45,41 @@ class GithubService:
             return [item for item in data.get("tree", []) if item.get("type") == "blob"]
 
     async def download_repo_zip(self, owner: str, repo: str, branch: Optional[str] = None) -> bytes:
-        """Downloads the entire repository as a ZIP archive. If branch is None, GitHub uses default."""
-        url = f"https://api.github.com/repos/{owner}/{repo}/zipball"
+        """Downloads the entire repository as a ZIP archive. If API 403s, try public archive link."""
+        # 1. Try official API (fastest, especially with token)
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/zipball"
         if branch:
-            url += f"/{branch}"
+            api_url += f"/{branch}"
             
         async with httpx.AsyncClient(follow_redirects=True) as client:
-            response = await client.get(url, headers=self.headers)
-            if response.status_code != 200:
-                logger.error(f"GitHub ZIP Download failed ({response.status_code}) for {url}: {response.text}")
+            try:
+                response = await client.get(api_url, headers=self.headers)
+                if response.status_code == 200:
+                    return response.content
+                    
+                # If rate limited (403), we try the public web archive URL
+                if response.status_code in [403, 429]:
+                    logger.warning(f"GitHub API Rate Limited (403/429). Attempting web-fallback for {owner}/{repo}...")
+                    # Note: We guess branch 'master' then 'main' if None
+                    fallback_branch = branch or "master"
+                    web_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{fallback_branch}.zip"
+                    
+                    web_res = await client.get(web_url)
+                    if web_res.status_code == 200:
+                        return web_res.content
+                        
+                    if not branch: # Try main as second web guess
+                        web_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/main.zip"
+                        web_res = await client.get(web_url)
+                        if web_res.status_code == 200:
+                            return web_res.content
+                
+                logger.error(f"GitHub ZIP Download failed ({response.status_code}) for {api_url}: {response.text}")
                 raise Exception(f"Failed to download repo ZIP (branch: {branch or 'default'}): {response.status_code}")
-            return response.content
+                
+            except Exception as e:
+                logger.error(f"ZIP Download encountered an error: {e}")
+                raise e
 
     def should_index(self, path: str) -> bool:
         """Filter to exclude noise and non-text files."""
