@@ -6,6 +6,7 @@ from app.ingestion import DocumentChunker
 from app.embeddings import EmbeddingService
 from app.vector_store import VectorStore
 from app.llm import LLMService
+from app.cache import SemanticCache
 
 app = FastAPI(title="RTFM Agent API", version="0.1.0")
 
@@ -14,6 +15,7 @@ chunker = DocumentChunker()
 embedder = EmbeddingService()
 vector_store = VectorStore()
 llm = LLMService()
+semantic_cache = SemanticCache(vector_store)
 
 class ChatRequest(BaseModel):
     question: str
@@ -48,20 +50,50 @@ async def ingest_document(file: UploadFile = File(...)):
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    """Retrieves relevant context and answers the user's question via streaming."""
+    """Retrieves relevant context and answers the user's question via streaming. Implements Semantic Caching."""
     try:
         # 1. Embed Question
         query_emb = embedder.embed_text(request.question)
         
-        # 2. Search
+        # 2. Check Cache
+        cached_answer = semantic_cache.check(query_emb)
+        if cached_answer:
+            # Yield the cached answer instantly!
+            async def cache_stream():
+                yield cached_answer
+            return StreamingResponse(cache_stream(), media_type="text/plain")
+        
+        # 3. Search if Cache Missed
         retrieved_chunks = vector_store.search(query_emb, top_k=5)
         
-        # 3. Generate Stream
+        # 4. Generate Stream and intercept to save to cache
         def event_stream():
+            full_answer = []
             stream = llm.stream_answer(request.question, retrieved_chunks)
             for chunk_text in stream:
+                full_answer.append(chunk_text)
                 yield chunk_text
+            
+            # Save final answer to cache!
+            semantic_cache.put(request.question, query_emb, "".join(full_answer))
                 
         return StreamingResponse(event_stream(), media_type="text/plain")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/metrics")
+async def get_metrics():
+    """Returns caching hit rates and LLM deflection metrics."""
+    try:
+        return semantic_cache.get_metrics()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/cache")
+async def clear_cache():
+    """Flushes the semantic cache index."""
+    try:
+        semantic_cache.clear()
+        return {"message": "Semantic cache flushed successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
