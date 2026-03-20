@@ -273,14 +273,14 @@ async def delete_brain(brain_id: str, user_id: str = Depends(verify_token)):
     return {"message": f"Brain '{brain_id}' removed from registry"}
 
 @app.get("/debug-index")
-async def debug_index(user_id: str = Depends(verify_token)):
-    """Diagnostic endpoint to inspect raw vector metadata."""
+async def debug_index(user_id: str):
+    """Temporary diagnostic endpoint (No Auth) to inspect raw vector metadata."""
     try:
-        # Search for first 10 vectors for this user
+        # Search for first 20 vectors for this user
         dummy_emb = [0.0] * 1536
         results = vector_store.index.query(
             vector=dummy_emb,
-            top_k=10,
+            top_k=20,
             include_metadata=True,
             filter=f"user_id = '{user_id}'"
         )

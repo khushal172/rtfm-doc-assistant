@@ -52,6 +52,7 @@ class VectorStore:
             
             vectors.append((vec_id, emb, meta))
             
+        logger.info(f"Upserting {len(vectors)} vectors with keys: {list(vectors[0][2].keys()) if vectors else 'N/A'}")
         self.index.upsert(vectors=vectors)
 
     def search(self, query_embedding: List[float], top_k: int = 5, query_text: str = None, user_id: str = None, brain_id: str = "default") -> List[Dict[str, Any]]:
