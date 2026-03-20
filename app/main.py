@@ -122,34 +122,63 @@ async def ingest_github(
             files_to_index = [item for item in tree if gh.should_index(item["path"])]
             logger.info(f"Indexing {len(files_to_index)} files from GitHub starting...")
             
+            chunk_buffer = []
+            file_registry_buffer = [] # To track which files were in this batch
+            
             for i, item in enumerate(files_to_index):
                 path = item["path"]
                 content = await gh.get_file_content(repo_info["owner"], repo_info["repo"], path)
                 if not content:
                     continue
                     
-                chunks = chunker.chunk_text(content, source=path)
-                embeddings = embedder.embed_texts([c["text"] for c in chunks])
+                file_chunks = chunker.chunk_text(content, source=path)
+                chunk_buffer.extend(file_chunks)
+                file_registry_buffer.append(path)
                 
-                vector_store.upsert_chunks(
-                    chunks, 
-                    embeddings, 
-                    version=f"github-{repo_info['branch']}", 
-                    brain_id=x_brain_id, 
-                    user_id=user_id
-                )
-                
-                # Update registry
-                doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
-                doc_info = {
-                    "filename": path,
-                    "version": f"github-{repo_info['branch']}",
-                    "ingested_at": datetime.utcnow().isoformat() + "Z"
-                }
-                session_store.redis.hset(doc_key, path, json.dumps(doc_info))
+                # If buffer is large enough (e.g., 50 chunks) or it's the last file
+                if len(chunk_buffer) >= 50 or i == len(files_to_index) - 1:
+                    if not chunk_buffer:
+                        continue
+                        
+                    logger.info(f"Processing batch of {len(chunk_buffer)} chunks for {len(file_registry_buffer)} files...")
+                    
+                    try:
+                        embeddings = embedder.embed_texts([c["text"] for c in chunk_buffer])
+                        
+                        vector_store.upsert_chunks(
+                            chunk_buffer, 
+                            embeddings, 
+                            version=f"github-{repo_info['branch']}", 
+                            brain_id=x_brain_id, 
+                            user_id=user_id
+                        )
+                        
+                        # Update registry for all files in this batch
+                        doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
+                        for f_path in file_registry_buffer:
+                            doc_info = {
+                                "filename": f_path,
+                                "version": f_path, # Use path as version for github files to ensure individual tracking
+                                "ingested_at": datetime.utcnow().isoformat() + "Z"
+                            }
+                            session_store.redis.hset(doc_key, f_path, json.dumps(doc_info))
+                            
+                        # Clear buffers
+                        chunk_buffer = []
+                        file_registry_buffer = []
+                        
+                        # Small throttle to avoid hitting RPM/TPM limits on the free tier
+                        import asyncio
+                        await asyncio.sleep(1) 
+                        
+                    except Exception as embed_err:
+                        logger.error(f"Batch embedding failed: {embed_err}")
+                        # If a batch fails, we clear it and continue (or we could retry)
+                        chunk_buffer = []
+                        file_registry_buffer = []
                 
                 if (i + 1) % 10 == 0:
-                    logger.info(f"GitHub Ingest Progress: {i+1}/{len(files_to_index)} files completed.")
+                    logger.info(f"GitHub Ingest Progress: {i+1}/{len(files_to_index)} files scanned.")
                     
             logger.info(f"GitHub Ingest Complete for {repo_info['owner']}/{repo_info['repo']}.")
         except Exception as e:
