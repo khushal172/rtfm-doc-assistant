@@ -273,28 +273,30 @@ async def delete_brain(brain_id: str, user_id: str = Depends(verify_token)):
     return {"message": f"Brain '{brain_id}' removed from registry"}
 
 @app.get("/debug-index")
-async def debug_index():
-    """Diagnostic endpoint to inspect raw vector metadata using range."""
+async def debug_index(user_id: str = Depends(verify_token)):
+    """Diagnostic endpoint to check if data exists for the current user."""
     try:
-        # Fetch the first 50 vectors in the index
-        results = vector_store.index.range(
-            cursor="0", # Start from the beginning
-            limit=50,
+        # Search for EVERYTHING for this user using a "empty" query
+        dummy_emb = [0.0] * 1536
+        results = vector_store.index.query(
+            vector=dummy_emb,
+            top_k=20,
             include_metadata=True,
-            include_vectors=False
+            filter=f"user_id = '{user_id}'"
         )
+        
+        # Also check without brain filter but for this user
         return {
-            "total_count_in_db": 259, # We saw this in info
-            "count": len(results.vectors),
-            "vectors": [
+            "your_user_id": user_id,
+            "found_count": len(results),
+            "sample_results": [
                 {
-                    "id": v.id,
-                    "metadata": v.metadata
-                } for v in results.vectors
+                    "id": r.id,
+                    "metadata": r.metadata
+                } for r in results
             ]
         }
     except Exception as e:
-        logger.error(f"Debug index range failed: {e}")
         return {"error": str(e)}
 
 @app.delete("/cache")
