@@ -8,12 +8,13 @@ export interface ChatMessage {
 /**
  * Executes a streaming chat request.
  */
-export async function* streamChat(question: string, token: string, sessionId?: string) {
+export async function* streamChat(question: string, token: string, sessionId?: string, brainId: string = "default") {
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: "POST",
     headers: { 
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`
+      "Authorization": `Bearer ${token}`,
+      "X-Brain-Id": brainId
     },
     body: JSON.stringify({ question, session_id: sessionId }),
   });
@@ -42,7 +43,8 @@ export async function ingestDocument(file: File, token: string, version?: string
   const response = await fetch(`${API_BASE_URL}/ingest`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${token}`
+      "Authorization": `Bearer ${token}`,
+      "X-Brain-Id": brainId || "default"
     },
     body: formData,
   });
@@ -57,7 +59,8 @@ export async function ingestDocument(file: File, token: string, version?: string
 export async function getMetrics(token: string) {
   const response = await fetch(`${API_BASE_URL}/metrics`, {
     headers: {
-      "Authorization": `Bearer ${token}`
+      "Authorization": `Bearer ${token}`,
+      "X-Brain-Id": brainId || "default"
     }
   });
   if (!response.ok) return null;
@@ -67,17 +70,19 @@ export async function getMetrics(token: string) {
 export async function listDocuments(token: string) {
   const response = await fetch(`${API_BASE_URL}/documents`, {
     headers: {
-      "Authorization": `Bearer ${token}`
+      "Authorization": `Bearer ${token}`,
+      "X-Brain-Id": brainId || "default"
     }
   });
   if (!response.ok) return [];
   return await response.json();
 }
-export async function deleteDocument(filename: string, token: string) {
+export async function deleteDocument(filename: string, token: string, brainId: string = "default") {
   const response = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(filename)}`, {
     method: "DELETE",
     headers: {
-      "Authorization": `Bearer ${token}`
+      "Authorization": `Bearer ${token}`,
+      "X-Brain-Id": brainId
     }
   });
   if (!response.ok) throw new Error("Failed to delete document");

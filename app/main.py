@@ -249,6 +249,33 @@ async def delete_document(filename: str, user_id: str = Depends(verify_token), x
         logger.error(f"Deletion failed for document '{filename}': {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/brains")
+async def list_brains(user_id: str = Depends(verify_token)):
+    """Returns all knowledge spaces (brains) for the user."""
+    brains_key = f"user:{user_id}:brains"
+    brains = session_store.redis.smembers(brains_key)
+    if not brains:
+        # Create default brain if first time
+        session_store.redis.sadd(brains_key, "default")
+        return ["default"]
+    return list(brains)
+
+@app.post("/brains/{brain_id}")
+async def create_brain(brain_id: str, user_id: str = Depends(verify_token)):
+    """Creates a new knowledge space."""
+    brains_key = f"user:{user_id}:brains"
+    session_store.redis.sadd(brains_key, brain_id)
+    return {"message": f"Brain '{brain_id}' created"}
+
+@app.delete("/brains/{brain_id}")
+async def delete_brain(brain_id: str, user_id: str = Depends(verify_token)):
+    """Deletes a brain (Registry only, vectors stay but become unreachable)."""
+    if brain_id == "default":
+        raise HTTPException(status_code=400, detail="Cannot delete default brain")
+    brains_key = f"user:{user_id}:brains"
+    session_store.redis.srem(brains_key, brain_id)
+    return {"message": f"Brain '{brain_id}' removed from registry"}
+
 @app.delete("/cache")
 async def clear_cache():
     """Flushes the semantic cache index."""
