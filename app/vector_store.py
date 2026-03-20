@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 from typing import List, Dict, Any
 from upstash_vector import Index
 from app.config import settings
@@ -11,14 +12,15 @@ class VectorStore:
             token=settings.upstash_vector_rest_token
         )
 
-    def _generate_id(self, source: str, chunk_index: int) -> str:
-        """Deterministically generate an ID to handle re-ingestion deduplication."""
-        s = f"{source}::{chunk_index}"
+    def _generate_id(self, source: str, chunk_index: int, version: str) -> str:
+        """Deterministically generate an ID to handle re-ingestion deduplication per version."""
+        s = f"{source}::{version}::{chunk_index}"
         return hashlib.sha256(s.encode()).hexdigest()
 
-    def upsert_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]]):
+    def upsert_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]], version: str = "1.0.0"):
         """
         Takes chunks and their corresponding embeddings and upserts them.
+        Includes versioning and timestamp metadata.
         """
         if len(chunks) != len(embeddings):
             raise ValueError("Mismatched chunks and embeddings lengths")
@@ -26,16 +28,20 @@ class VectorStore:
         if not chunks:
             return
 
+        ingested_at = datetime.utcnow().isoformat() + "Z"
         vectors = []
         for chunk, emb in zip(chunks, embeddings):
             vec_id = self._generate_id(
                 source=chunk["metadata"]["source"], 
-                chunk_index=chunk["metadata"]["chunk_index"]
+                chunk_index=chunk["metadata"]["chunk_index"],
+                version=version
             )
             
-            # Combine text into metadata so we retrieve it upon search
+            # Combine text into metadata
             meta = chunk["metadata"].copy()
             meta["text"] = chunk["text"]
+            meta["version"] = version
+            meta["ingested_at"] = ingested_at
             
             vectors.append((vec_id, emb, meta))
             

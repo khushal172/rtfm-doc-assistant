@@ -42,6 +42,7 @@ class ChatRequest(BaseModel):
 @app.post("/ingest")
 async def ingest_document(
     file: UploadFile = File(...),
+    version: Optional[str] = None,
     user_id: str = Depends(verify_token)
 ):
     """Ingests a markdown or text file, chunks it, embeds it, and saves to Upstash."""
@@ -49,11 +50,13 @@ async def ingest_document(
         logger.warning(f"Ingest call rejected for user {user_id}: No file provided")
         raise HTTPException(status_code=400, detail="No file provided")
         
+    doc_version = version or datetime.utcnow().strftime("%Y%m%d-%H%M")
+    
     try:
         content = await file.read()
         text = content.decode("utf-8")
         
-        logger.info(f"User {user_id} ingesting file: {file.filename}")
+        logger.info(f"User {user_id} ingesting file: {file.filename} (v{doc_version})")
         chunks = chunker.chunk_text(text, source=file.filename)
         
         # Add user_id to metadata for isolation
@@ -63,13 +66,25 @@ async def ingest_document(
         texts_to_embed = [c["text"] for c in chunks]
         embeddings = embedder.embed_texts(texts_to_embed)
         
-        vector_store.upsert_chunks(chunks, embeddings)
+        vector_store.upsert_chunks(chunks, embeddings, version=doc_version)
         
-        logger.info(f"Successfully ingested {len(chunks)} chunks for user {user_id}.")
+        # Track document metadata in Redis for easy listing
+        doc_key = f"user:{user_id}:documents"
+        doc_info = {
+            "filename": file.filename,
+            "version": doc_version,
+            "ingested_at": datetime.utcnow().isoformat() + "Z"
+        }
+        # We store as a JSON string in a HASH where key is the filename
+        # This allows easy "latest version" tracking
+        session_store.redis.hset(doc_key, file.filename, json.dumps(doc_info))
+        
+        logger.info(f"Successfully ingested {len(chunks)} chunks for user {user_id} (v{doc_version}).")
         return {
             "message": "Document ingested successfully", 
             "chunks": len(chunks), 
-            "source": file.filename
+            "source": file.filename,
+            "version": doc_version
         }
     except Exception as e:
         logger.error(f"Ingestion failed: {e}", exc_info=True)
@@ -168,6 +183,21 @@ async def get_metrics(user_id: str = Depends(verify_token)):
     """Returns semantic cache analytics."""
     try:
         return semantic_cache.get_metrics()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/documents")
+async def list_documents(user_id: str = Depends(verify_token)):
+    """Returns a list of all ingested documents and their current versions for the user."""
+    try:
+        doc_key = f"user:{user_id}:documents"
+        docs = session_store.redis.hgetall(doc_key)
+        
+        result = []
+        for filename, data_str in docs.items():
+            result.append(json.loads(data_str))
+            
+        return sorted(result, key=lambda x: x["ingested_at"], reverse=True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
