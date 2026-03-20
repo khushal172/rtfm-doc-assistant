@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     gemini_api_key: str
+    clerk_instance_url: str
     upstash_vector_rest_url: str
     upstash_vector_rest_token: str
     upstash_redis_rest_url: str
