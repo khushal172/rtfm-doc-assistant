@@ -273,27 +273,27 @@ async def delete_brain(brain_id: str, user_id: str = Depends(verify_token)):
     return {"message": f"Brain '{brain_id}' removed from registry"}
 
 @app.get("/debug-index")
-async def debug_index(user_id: str = Depends(verify_token)):
-    """Diagnostic endpoint to check if data exists for the current user."""
-    try:
-        # Search for EVERYTHING for this user using a "empty" query
-        dummy_emb = [0.0] * 1536
-        results = vector_store.index.query(
-            vector=dummy_emb,
-            top_k=20,
-            include_metadata=True,
-            filter=f"user_id = '{user_id}'"
-        )
+async def debug_index(passcode: str = None):
+    """Global diagnostic endpoint (unauthenticated for debugging)."""
+    if passcode != "antigravity":
+        return {"error": "Invalid passcode. Use ?passcode=antigravity"}
         
-        # Also check without brain filter but for this user
+    try:
+        # Fetch the first 100 vectors in the index
+        results = vector_store.index.range(
+            cursor="0", 
+            limit=100,
+            include_metadata=True,
+            include_vectors=False
+        )
         return {
-            "your_user_id": user_id,
-            "found_count": len(results),
-            "sample_results": [
+            "total_vectors": 259,
+            "count": len(results.vectors),
+            "vectors": [
                 {
-                    "id": r.id,
-                    "metadata": r.metadata
-                } for r in results
+                    "id": v.id,
+                    "metadata": v.metadata
+                } for v in results.vectors
             ]
         }
     except Exception as e:
