@@ -28,16 +28,37 @@ class GithubService:
         return {"owner": owner, "repo": repo, "branch": branch}
 
     async def _resolve_branch(self, owner: str, repo: str, branch: Optional[str] = None) -> str:
-        """Determines the correct branch to use, defaulting to the repo's default_branch."""
+        """Determines the correct branch to use, with robust fallbacks."""
         if branch and branch != "main":
             return branch
             
         async with httpx.AsyncClient() as client:
-            repo_url = f"https://api.github.com/repos/{owner}/{repo}"
-            repo_res = await client.get(repo_url, headers=self.headers)
-            if repo_res.status_code == 200:
-                return repo_res.json().get("default_branch", "main")
-            return "main"
+            # 1. Try to fetch default branch from API
+            try:
+                repo_url = f"https://api.github.com/repos/{owner}/{repo}"
+                repo_res = await client.get(repo_url, headers=self.headers)
+                if repo_res.status_code == 200:
+                    return repo_res.json().get("default_branch", "main")
+            except Exception as e:
+                logger.warning(f"Metadata fetch failed for {owner}/{repo}: {e}")
+
+            # 2. Probe for 'main' existence
+            try:
+                main_url = f"https://api.github.com/repos/{owner}/{repo}/branches/main"
+                main_res = await client.get(main_url, headers=self.headers)
+                if main_res.status_code == 200:
+                    return "main"
+            except: pass
+
+            # 3. Fallback to 'master' probe
+            try:
+                master_url = f"https://api.github.com/repos/{owner}/{repo}/branches/master"
+                master_res = await client.get(master_url, headers=self.headers)
+                if master_res.status_code == 200:
+                    return "master"
+            except: pass
+
+            return "main" # Final fallback
 
     async def get_recursive_tree(self, owner: str, repo: str, branch: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fetches the recursive file tree for a repository, detecting the default branch if needed."""
@@ -48,6 +69,7 @@ class GithubService:
             response = await client.get(url, headers=self.headers)
             if response.status_code != 200:
                 logger.error(f"GitHub API error ({response.status_code}): {response.text}")
+                # If we get a 404 here, we might have guessed the branch wrong
                 raise Exception(f"Failed to fetch repo tree (branch: {branch}): {response.status_code}")
                 
             data = response.json()
