@@ -56,6 +56,15 @@ async def ingest_document(
 ):
     """Ingests a markdown or text file, chunks it, embeds it, and saves to Upstash."""
     logger.info(f"INGEST: user={user_id}, brain={x_brain_id}, file={file.filename}")
+    if not file.filename:
+        logger.warning(f"Ingest call rejected for user {user_id}: No file provided")
+        raise HTTPException(status_code=400, detail="No file provided")
+        
+    doc_version = version or datetime.utcnow().strftime("%Y%m%d-%H%M")
+    
+    try:
+        content = await file.read()
+        text = content.decode("utf-8")
         chunks = chunker.chunk_text(text, source=file.filename)
         
         texts_to_embed = [c["text"] for c in chunks]
