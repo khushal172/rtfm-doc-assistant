@@ -32,27 +32,31 @@ class VectorStore:
             return
 
         ingested_at = datetime.utcnow().isoformat() + "Z"
+        # Ensure we have strings for isolation
+        u_id = user_id or "anonymous"
+        b_id = brain_id or "default"
+
         vectors = []
         for chunk, emb in zip(chunks, embeddings):
             vec_id = self._generate_id(
                 source=chunk["metadata"]["source"], 
                 chunk_index=chunk["metadata"]["chunk_index"],
                 version=version,
-                brain_id=brain_id,
-                user_id=user_id
+                brain_id=b_id,
+                user_id=u_id
             )
             
             # Combine text into metadata
             meta = chunk["metadata"].copy()
             meta["text"] = chunk["text"]
             meta["version"] = version
-            meta["brain_id"] = brain_id
-            meta["user_id"] = user_id
+            meta["brain_id"] = b_id
+            meta["user_id"] = u_id
             meta["ingested_at"] = ingested_at
             
             vectors.append((vec_id, emb, meta))
             
-        logger.info(f"Upserting {len(vectors)} vectors with keys: {list(vectors[0][2].keys()) if vectors else 'N/A'}")
+        logger.info(f"SUCCESS: Upserting {len(vectors)} vectors | user='{u_id}' | brain='{b_id}' | meta_keys={list(vectors[0][2].keys())}")
         self.index.upsert(vectors=vectors)
 
     def search(self, query_embedding: List[float], top_k: int = 5, query_text: str = None, user_id: str = None, brain_id: str = "default") -> List[Dict[str, Any]]:

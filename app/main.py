@@ -43,6 +43,10 @@ class ChatRequest(BaseModel):
 
 from fastapi import Header
 
+@app.get("/test-headers")
+async def test_headers(x_brain_id: Optional[str] = Header(None)):
+    return {"X-Brain-Id": x_brain_id}
+
 @app.post("/ingest")
 async def ingest_document(
     file: UploadFile = File(...),
@@ -51,17 +55,7 @@ async def ingest_document(
     x_brain_id: str = Header("default")
 ):
     """Ingests a markdown or text file, chunks it, embeds it, and saves to Upstash."""
-    if not file.filename:
-        logger.warning(f"Ingest call rejected for user {user_id}: No file provided")
-        raise HTTPException(status_code=400, detail="No file provided")
-        
-    doc_version = version or datetime.utcnow().strftime("%Y%m%d-%H%M")
-    
-    try:
-        content = await file.read()
-        text = content.decode("utf-8")
-        
-        logger.info(f"User {user_id} ingesting file: {file.filename} (v{doc_version})")
+    logger.info(f"INGEST: user={user_id}, brain={x_brain_id}, file={file.filename}")
         chunks = chunker.chunk_text(text, source=file.filename)
         
         texts_to_embed = [c["text"] for c in chunks]
