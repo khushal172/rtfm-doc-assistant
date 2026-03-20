@@ -64,14 +64,10 @@ async def ingest_document(
         logger.info(f"User {user_id} ingesting file: {file.filename} (v{doc_version})")
         chunks = chunker.chunk_text(text, source=file.filename)
         
-        # Add user_id to metadata for isolation
-        for c in chunks:
-            c["user_id"] = user_id
-            
         texts_to_embed = [c["text"] for c in chunks]
         embeddings = embedder.embed_texts(texts_to_embed)
         
-        vector_store.upsert_chunks(chunks, embeddings, version=doc_version, brain_id=x_brain_id)
+        vector_store.upsert_chunks(chunks, embeddings, version=doc_version, brain_id=x_brain_id, user_id=user_id)
         
         # Track document metadata in Redis for easy listing (segmented by brain)
         doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"

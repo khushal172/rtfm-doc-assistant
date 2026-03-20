@@ -12,15 +12,15 @@ class VectorStore:
             token=settings.upstash_vector_rest_token
         )
 
-    def _generate_id(self, source: str, chunk_index: int, version: str, brain_id: str = "default") -> str:
-        """Deterministically generate an ID to handle re-ingestion deduplication per version and brain."""
-        s = f"{brain_id}::{source}::{version}::{chunk_index}"
+    def _generate_id(self, source: str, chunk_index: int, version: str, brain_id: str = "default", user_id: str = "unknown") -> str:
+        """Deterministically generate an ID to handle re-ingestion deduplication per user, version and brain."""
+        s = f"{user_id}::{brain_id}::{source}::{version}::{chunk_index}"
         return hashlib.sha256(s.encode()).hexdigest()
 
-    def upsert_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]], version: str = "1.0.0", brain_id: str = "default"):
+    def upsert_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]], version: str = "1.0.0", brain_id: str = "default", user_id: str = "unknown"):
         """
         Takes chunks and their corresponding embeddings and upserts them.
-        Includes versioning, brain isolation, and timestamp metadata.
+        Includes versioning, brain isolation, user isolation, and timestamp metadata.
         """
         if len(chunks) != len(embeddings):
             raise ValueError("Mismatched chunks and embeddings lengths")
@@ -35,7 +35,8 @@ class VectorStore:
                 source=chunk["metadata"]["source"], 
                 chunk_index=chunk["metadata"]["chunk_index"],
                 version=version,
-                brain_id=brain_id
+                brain_id=brain_id,
+                user_id=user_id
             )
             
             # Combine text into metadata
@@ -43,6 +44,7 @@ class VectorStore:
             meta["text"] = chunk["text"]
             meta["version"] = version
             meta["brain_id"] = brain_id
+            meta["user_id"] = user_id
             meta["ingested_at"] = ingested_at
             
             vectors.append((vec_id, emb, meta))
