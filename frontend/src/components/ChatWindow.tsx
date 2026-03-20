@@ -5,6 +5,8 @@ import { ChatMessage, streamChat } from "@/lib/api";
 import { v4 as uuidv4 } from "uuid";
 import { useAuth } from "@clerk/nextjs";
 import { useBrain } from "@/context/BrainContext";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export function ChatWindow() {
   const { getToken } = useAuth();
@@ -79,11 +81,13 @@ export function ChatWindow() {
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
-              className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${
+              className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed prose prose-invert max-w-none break-words ${
                 msg.role === "user" ? "chat-bubble-user rounded-tr-none" : "chat-bubble-ai rounded-tl-none"
               }`}
             >
-              {msg.content}
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {msg.content}
+              </ReactMarkdown>
             </div>
           </div>
         ))}
