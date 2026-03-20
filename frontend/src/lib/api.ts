@@ -73,3 +73,13 @@ export async function listDocuments(token: string) {
   if (!response.ok) return [];
   return await response.json();
 }
+export async function deleteDocument(filename: string, token: string) {
+  const response = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(filename)}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${token}`
+    }
+  });
+  if (!response.ok) throw new Error("Failed to delete document");
+  return await response.json();
+}

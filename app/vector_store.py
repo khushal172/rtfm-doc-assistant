@@ -12,15 +12,15 @@ class VectorStore:
             token=settings.upstash_vector_rest_token
         )
 
-    def _generate_id(self, source: str, chunk_index: int, version: str) -> str:
-        """Deterministically generate an ID to handle re-ingestion deduplication per version."""
-        s = f"{source}::{version}::{chunk_index}"
+    def _generate_id(self, source: str, chunk_index: int, version: str, brain_id: str = "default") -> str:
+        """Deterministically generate an ID to handle re-ingestion deduplication per version and brain."""
+        s = f"{brain_id}::{source}::{version}::{chunk_index}"
         return hashlib.sha256(s.encode()).hexdigest()
 
-    def upsert_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]], version: str = "1.0.0"):
+    def upsert_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]], version: str = "1.0.0", brain_id: str = "default"):
         """
         Takes chunks and their corresponding embeddings and upserts them.
-        Includes versioning and timestamp metadata.
+        Includes versioning, brain isolation, and timestamp metadata.
         """
         if len(chunks) != len(embeddings):
             raise ValueError("Mismatched chunks and embeddings lengths")
@@ -34,25 +34,31 @@ class VectorStore:
             vec_id = self._generate_id(
                 source=chunk["metadata"]["source"], 
                 chunk_index=chunk["metadata"]["chunk_index"],
-                version=version
+                version=version,
+                brain_id=brain_id
             )
             
             # Combine text into metadata
             meta = chunk["metadata"].copy()
             meta["text"] = chunk["text"]
             meta["version"] = version
+            meta["brain_id"] = brain_id
             meta["ingested_at"] = ingested_at
             
             vectors.append((vec_id, emb, meta))
             
         self.index.upsert(vectors=vectors)
 
-    def search(self, query_embedding: List[float], top_k: int = 5, query_text: str = None, user_id: str = None) -> List[Dict[str, Any]]:
-        """Searches the vector store using KNN and applies keyword boosting if text is provided. Supports user_id isolation."""
+    def search(self, query_embedding: List[float], top_k: int = 5, query_text: str = None, user_id: str = None, brain_id: str = "default") -> List[Dict[str, Any]]:
+        """Searches the vector store using KNN and applies keyword boosting. Supports user_id and brain_id isolation."""
         fetch_k = top_k * 3 if query_text else top_k
         
-        # Build filter if user_id is provided
-        filter_str = f"user_id = '{user_id}'" if user_id else ""
+        # Build filter for user_id and brain_id
+        filters = []
+        if user_id: filters.append(f"user_id = '{user_id}'")
+        if brain_id: filters.append(f"brain_id = '{brain_id}'")
+        
+        filter_str = " AND ".join(filters) if filters else ""
         
         results = self.index.query(
             vector=query_embedding,
@@ -76,9 +82,9 @@ class VectorStore:
             
         return metadata_list[:top_k]
 
-    def delete_chunks(self, filename: str, user_id: str):
+    def delete_chunks(self, filename: str, user_id: str, brain_id: str = "default"):
         """
-        Deletes all chunks associated with a specific file and user.
+        Deletes all chunks associated with a specific file, user, and brain.
         Query for IDs first, then delete.
         """
         # Query for all IDs matching the metadata
@@ -87,7 +93,7 @@ class VectorStore:
             vector=dummy_emb,
             top_k=1000, 
             include_metadata=False,
-            filter=f"source = '{filename}' AND user_id = '{user_id}'"
+            filter=f"source = '{filename}' AND user_id = '{user_id}' AND brain_id = '{brain_id}'"
         )
         
         ids_to_delete = [r.id for r in res]
