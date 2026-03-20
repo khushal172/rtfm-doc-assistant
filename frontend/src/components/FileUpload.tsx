@@ -21,6 +21,8 @@ export function FileUpload() {
       
       await ingestDocument(file, token);
       setStatus("success");
+      // Dispatch custom event for real-time UI updates
+      window.dispatchEvent(new CustomEvent("document-ingested"));
     } catch (error) {
       console.error("Upload error:", error);
       setStatus("error");
