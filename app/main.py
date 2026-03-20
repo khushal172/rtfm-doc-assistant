@@ -9,6 +9,8 @@ from app.vector_store import VectorStore
 from app.llm import LLMService
 from app.cache import SemanticCache
 
+import json
+from datetime import datetime
 from typing import Optional
 from app.session import SessionStore
 from app.memory import LongTermMemory
@@ -140,9 +142,34 @@ async def chat(
         # 4. Hybrid Search Document Chunks (Isolated by user_id)
         retrieved_chunks = vector_store.search(query_emb, top_k=5, query_text=request.question, user_id=user_id)
         
+        # 4.5 Staleness Detection
+        # Check if any retrieved chunks are older than the latest version in Redis
+        stale_docs = []
+        try:
+            doc_key = f"user:{user_id}:documents"
+            registry = session_store.redis.hgetall(doc_key)
+            
+            for chunk in retrieved_chunks:
+                source = chunk.get("source")
+                chunk_ver = chunk.get("version")
+                if source in registry:
+                    latest_info = json.loads(registry[source])
+                    latest_ver = latest_info.get("version")
+                    if chunk_ver != latest_ver and source not in [d["source"] for d in stale_docs]:
+                        stale_docs.append({"source": source, "using": chunk_ver, "latest": latest_ver})
+        except Exception as e:
+            logger.warning(f"Staleness detection failed: {e}")
+
         # 5. Generate Stream
         def event_stream():
             full_answer = []
+            
+            # If we found stale docs, prepend a warning to the stream (or add to prompt)
+            if stale_docs:
+                warning = f"⚠️ *Note: Some information is from older versions ({', '.join([f'{d['source']} v{d['using']}' for d in stale_docs])}). Newer versions are available.* \n\n"
+                yield warning
+                full_answer.append(warning)
+
             stream = llm.stream_answer(request.question, retrieved_chunks, history, memories)
             for chunk_text in stream:
                 full_answer.append(chunk_text)
