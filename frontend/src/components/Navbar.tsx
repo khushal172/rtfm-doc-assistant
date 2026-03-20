@@ -19,6 +19,7 @@ export function Navbar() {
               <span>Secure Session</span>
               <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
            </div>
+           <BrainSelector />
            <UserButton />
         </div>
       </div>
