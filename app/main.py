@@ -117,69 +117,76 @@ async def ingest_github(
         raise HTTPException(status_code=400, detail=f"Invalid GitHub URL: {str(e)}")
 
     async def background_ingest():
+        import io
+        import zipfile
+        import asyncio
+        
         try:
-            tree = await gh.get_recursive_tree(**repo_info)
-            files_to_index = [item for item in tree if gh.should_index(item["path"])]
-            logger.info(f"Indexing {len(files_to_index)} files from GitHub starting...")
+            # 1. Download full ZIP (Single request to GitHub)
+            logger.info(f"Downloading ZIP for {repo_info['owner']}/{repo_info['repo']}...")
+            zip_data = await gh.download_repo_zip(**repo_info)
             
             chunk_buffer = []
-            file_registry_buffer = [] # To track which files were in this batch
+            file_registry_buffer = set() 
             
-            for i, item in enumerate(files_to_index):
-                path = item["path"]
-                content = await gh.get_file_content(repo_info["owner"], repo_info["repo"], path)
-                if not content:
-                    continue
-                    
-                file_chunks = chunker.chunk_text(content, source=path)
-                chunk_buffer.extend(file_chunks)
-                file_registry_buffer.append(path)
-                
-                # If buffer is large enough (e.g., 50 chunks) or it's the last file
-                if len(chunk_buffer) >= 50 or i == len(files_to_index) - 1:
-                    if not chunk_buffer:
-                        continue
-                        
-                    logger.info(f"Processing batch of {len(chunk_buffer)} chunks for {len(file_registry_buffer)} files...")
-                    
+            with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
+                all_files = z.namelist()
+                # Filter files
+                files_to_index = [f for f in all_files if gh.should_index(f)]
+                logger.info(f"Found {len(files_to_index)} valid files in ZIP. Starting indexing...")
+
+                for i, file_path in enumerate(files_to_index):
                     try:
-                        embeddings = embedder.embed_texts([c["text"] for c in chunk_buffer])
-                        
-                        vector_store.upsert_chunks(
-                            chunk_buffer, 
-                            embeddings, 
-                            version=f"github-{repo_info['branch']}", 
-                            brain_id=x_brain_id, 
-                            user_id=user_id
-                        )
-                        
-                        # Update registry for all files in this batch
-                        doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
-                        for f_path in file_registry_buffer:
-                            doc_info = {
-                                "filename": f_path,
-                                "version": f_path, # Use path as version for github files to ensure individual tracking
-                                "ingested_at": datetime.utcnow().isoformat() + "Z"
-                            }
-                            session_store.redis.hset(doc_key, f_path, json.dumps(doc_info))
+                        with z.open(file_path) as f:
+                            content = f.read().decode("utf-8", errors="replace")
                             
-                        # Clear buffers
-                        chunk_buffer = []
-                        file_registry_buffer = []
+                        # Clean path (GitHub zip often prefixes with owner-repo-hash/)
+                        display_path = "/".join(file_path.split("/")[1:]) if "/" in file_path else file_path
+                        if not display_path: continue # Skip root dir
                         
-                        # Small throttle to avoid hitting RPM/TPM limits on the free tier
-                        import asyncio
-                        await asyncio.sleep(1) 
+                        file_chunks = chunker.chunk_text(content, source=display_path)
+                        chunk_buffer.extend(file_chunks)
+                        file_registry_buffer.add(display_path)
                         
-                    except Exception as embed_err:
-                        logger.error(f"Batch embedding failed: {embed_err}")
-                        # If a batch fails, we clear it and continue (or we could retry)
-                        chunk_buffer = []
-                        file_registry_buffer = []
-                
-                if (i + 1) % 10 == 0:
-                    logger.info(f"GitHub Ingest Progress: {i+1}/{len(files_to_index)} files scanned.")
-                    
+                        # IF buffer is getting large or it's the last file, flush it in batches of 100
+                        if len(chunk_buffer) >= 100 or i == len(files_to_index) - 1:
+                            while chunk_buffer:
+                                batch = chunk_buffer[:100] # Strict 100 chunk limit for Gemini
+                                chunk_buffer = chunk_buffer[100:]
+                                
+                                logger.info(f"Embedding batch of {len(batch)} chunks...")
+                                try:
+                                    embeddings = embedder.embed_texts([c["text"] for c in batch])
+                                    vector_store.upsert_chunks(
+                                        batch, 
+                                        embeddings, 
+                                        version=f"github-{repo_info['branch']}", 
+                                        brain_id=x_brain_id, 
+                                        user_id=user_id
+                                    )
+                                    # Small throttle to stay under 100 RPM
+                                    await asyncio.sleep(2) 
+                                except Exception as embed_err:
+                                    logger.error(f"Batch embedding failed: {embed_err}")
+                                    await asyncio.sleep(5) # Longer sleep on error
+                                    
+                            # Update registry for files processed so far
+                            doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
+                            for f_path in file_registry_buffer:
+                                doc_info = {
+                                    "filename": f_path,
+                                    "version": f_path,
+                                    "ingested_at": datetime.utcnow().isoformat() + "Z"
+                                }
+                                session_store.redis.hset(doc_key, f_path, json.dumps(doc_info))
+                            file_registry_buffer.clear()
+
+                        if (i + 1) % 20 == 0:
+                            logger.info(f"GitHub Ingest Progress: {i+1}/{len(files_to_index)} files processed.")
+                            
+                    except Exception as file_err:
+                        logger.warning(f"Failed to process file {file_path}: {file_err}")
+
             logger.info(f"GitHub Ingest Complete for {repo_info['owner']}/{repo_info['repo']}.")
         except Exception as e:
             logger.error(f"Background GitHub Ingest failed: {e}", exc_info=True)

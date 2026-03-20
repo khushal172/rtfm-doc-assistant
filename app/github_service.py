@@ -51,24 +51,15 @@ class GithubService:
             # We only care about blobs (files), not trees (folders)
             return [item for item in data.get("tree", []) if item.get("type") == "blob"]
 
-    async def get_file_content(self, owner: str, repo: str, path: str) -> str:
-        """Fetches the raw content of a file."""
-        url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
-        
-        async with httpx.AsyncClient() as client:
+    async def download_repo_zip(self, owner: str, repo: str, branch: str = "main") -> bytes:
+        """Downloads the entire repository as a ZIP archive."""
+        url = f"https://api.github.com/repos/{owner}/{repo}/zipball/{branch}"
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             response = await client.get(url, headers=self.headers)
             if response.status_code != 200:
-                logger.error(f"GitHub Content API error ({response.status_code}) for path {path}")
-                return "" # Return empty on failure for a single file
-                
-            data = response.json()
-            if "content" in data and data.get("encoding") == "base64":
-                # Most files are base64 encoded in the contents API
-                return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
-            
-            # If large, use download_url? Or just fail for now.
-            logger.warning(f"File {path} is too large or not base64 encoded. Skipping.")
-            return ""
+                logger.error(f"GitHub ZIP Download failed ({response.status_code}): {response.text}")
+                raise Exception(f"Failed to download repo ZIP: {response.status_code}")
+            return response.content
 
     def should_index(self, path: str) -> bool:
         """Filter to exclude noise and non-text files."""
