@@ -75,9 +75,12 @@ export default function LandingPage() {
               <Link href={isSignedIn ? "/dashboard" : "/sign-up"} className="px-8 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 transition-all font-bold text-lg shadow-xl shadow-indigo-600/30 text-center">
                 Launch Application
               </Link>
-              <button className="px-8 py-4 rounded-2xl bg-white/5 hover:bg-white/10 transition-all font-bold text-lg border border-white/10 text-center">
+              <Link href="/whitepaper" className="px-8 py-4 rounded-2xl bg-white/5 hover:bg-white/10 transition-all font-bold text-lg border border-white/10 text-center">
                 Read Whitepaper
-              </button>
+              </Link>
+              <a href="https://github.com/khushal172/rtfm-doc-assistant" target="_blank" rel="noopener noreferrer" className="px-8 py-4 rounded-2xl bg-white/5 hover:bg-white/10 transition-all font-bold text-lg border border-white/10 text-center flex items-center justify-center gap-2">
+                View on GitHub
+              </a>
             </div>
           </div>
           
