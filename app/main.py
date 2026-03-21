@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,7 @@ from app.memory import LongTermMemory
 from app.logging_config import logger
 from app.auth import verify_token
 from app.github_service import GithubService
+from app.github_processor import GithubProcessor
 
 app = FastAPI(title="RTFM Agent API", version="0.1.0")
 
@@ -38,6 +40,7 @@ embedder = EmbeddingService()
 vector_store = VectorStore()
 llm = LLMService()
 semantic_cache = SemanticCache(vector_store)
+github_processor = GithubProcessor()
 session_store = SessionStore()
 ltm = LongTermMemory(vector_store, embedder)
 
@@ -144,7 +147,7 @@ async def ingest_github(
                     "status": "indexing",
                     "timestamp": datetime.utcnow().isoformat() + "Z"
                 }
-                session_store.redis.set(progress_key, json.dumps(progress_data))
+                await asyncio.to_thread(session_store.redis.set, progress_key, json.dumps(progress_data))
 
                 for i, file_path in enumerate(files_to_index):
                     try:
@@ -155,28 +158,62 @@ async def ingest_github(
                         display_path = "/".join(file_path.split("/")[1:]) if "/" in file_path else file_path
                         if not display_path: continue # Skip root dir
                         
-                        file_chunks = chunker.chunk_text(content, source=display_path)
-                        chunk_buffer.extend(file_chunks)
-                        file_registry_buffer.add(display_path)
+                        # 1. AST Extraction
+                        skeleton = github_processor.extract_skeleton(content, display_path)
                         
-                        # IF buffer is getting large or it's the last file, flush it
-                        if len(chunk_buffer) >= 256 or i == len(files_to_index) - 1:
+                        chunk_buffer.append({
+                            "display_path": display_path,
+                            "skeleton": skeleton,
+                            "content": content
+                        })
+                        
+                        # IF buffer has 20 files or it's the last file, flush it
+                        if len(chunk_buffer) >= 20 or i == len(files_to_index) - 1:
                             while chunk_buffer:
-                                batch = chunk_buffer[:256] 
-                                chunk_buffer = chunk_buffer[256:]
+                                batch = chunk_buffer[:20] 
+                                chunk_buffer = chunk_buffer[20:]
                                 
-                                logger.info(f"Embedding batch of {len(batch)} chunks (Local)...")
+                                logger.info(f"Summarizing and Embedding batch of {len(batch)} files...")
                                 try:
-                                    embeddings = embedder.embed_texts([c["text"] for c in batch])
-                                    vector_store.upsert_chunks(
-                                        batch, 
+                                    # 2. Batch Summarize with LLM
+                                    skeletons_dict = {item["display_path"]: item["skeleton"] for item in batch}
+                                    summaries_json = await asyncio.to_thread(llm.summarize_code_batch, skeletons_dict)
+                                    try:
+                                        summaries = json.loads(summaries_json)
+                                    except Exception:
+                                        summaries = {}
+                                        
+                                    vector_chunks = []
+                                    texts_to_embed = []
+                                    
+                                    for item in batch:
+                                        path = item["display_path"]
+                                        summary = summaries.get(path, "No summary available.")
+                                        combined_text = f"File: {path}\nSummary: {summary}\n\nSkeleton:\n{item['skeleton']}"
+                                        
+                                        vector_chunks.append({
+                                            "text": combined_text,
+                                            "metadata": {"source": path, "chunk_index": 0}
+                                        })
+                                        texts_to_embed.append(combined_text)
+                                        
+                                        # 3. Save Full Text to Redis
+                                        redis_key = f"rtfm:repo:{user_id}:{x_brain_id}:{path}:content"
+                                        await asyncio.to_thread(session_store.redis.set, redis_key, item["content"])
+                                        file_registry_buffer.add(path)
+                                        
+                                    # 4. Embed (locally) and Upsert
+                                    embeddings = await asyncio.to_thread(embedder.embed_texts, texts_to_embed)
+                                    await asyncio.to_thread(
+                                        vector_store.upsert_chunks,
+                                        vector_chunks, 
                                         embeddings, 
                                         version=f"github-{repo_info['branch']}", 
                                         brain_id=x_brain_id, 
                                         user_id=user_id
                                     )
                                 except Exception as embed_err:
-                                    logger.error(f"Batch embedding failed: {embed_err}")
+                                    logger.error(f"Batch processing failed: {embed_err}")
                                     await asyncio.sleep(1) # Brief pause on error
                                     
                             # Update registry for files processed so far
@@ -187,31 +224,40 @@ async def ingest_github(
                                     "version": f_path,
                                     "ingested_at": datetime.utcnow().isoformat() + "Z"
                                 }
-                                session_store.redis.hset(doc_key, f_path, json.dumps(doc_info))
+                                await asyncio.to_thread(session_store.redis.hset, doc_key, f_path, json.dumps(doc_info))
                             file_registry_buffer.clear()
 
-                        if (i + 1) % 20 == 0:
-                            logger.info(f"GitHub Ingest Progress: {i+1}/{len(files_to_index)} files processed.")
-                            
-                        # Update Redis progress every 5 files
-                        if (i + 1) % 5 == 0 or i == len(files_to_index) - 1:
-                            progress_data["processed_files"] = i + 1
-                            if i == len(files_to_index) - 1:
-                                progress_data["status"] = "completed"
-                            session_store.redis.set(progress_key, json.dumps(progress_data))
-                            session_store.redis.expire(progress_key, 600)  # Expire after 10 mins
-                            
                     except Exception as file_err:
                         logger.warning(f"Failed to process file {file_path}: {file_err}")
-
+                        
+                    # Update Redis progress for EVERY file processed, even if it failed
+                    progress_data["processed_files"] = i + 1
+                    progress_data["timestamp"] = datetime.utcnow().isoformat() + "Z"
+                    if i == len(files_to_index) - 1:
+                        progress_data["status"] = "completed"
+                    await asyncio.to_thread(session_store.redis.set, progress_key, json.dumps(progress_data))
+                    await asyncio.to_thread(session_store.redis.expire, progress_key, 600)
             logger.info(f"GitHub Ingest Complete for {repo_info['owner']}/{repo_info['repo']}.")
         except Exception as e:
             logger.error(f"Background GitHub Ingest failed: {e}", exc_info=True)
+            # Report failure to Redis so UI can stop polling
+            progress_key = f"rtfm:ingest:{user_id}:progress"
+            error_data = {
+                "repo": f"{repo_info['owner']}/{repo_info['repo']}",
+                "status": "failed",
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            try:
+                await asyncio.to_thread(session_store.redis.set, progress_key, json.dumps(error_data))
+                await asyncio.to_thread(session_store.redis.expire, progress_key, 300) # Keep error for 5 mins
+            except Exception as redis_err:
+                logger.error(f"Failed to write error status to Redis: {redis_err}")
 
     # Proactively clear/reset progress state so the UI doesn't see old 100% data
     progress_key = f"rtfm:ingest:{user_id}:progress"
     logger.info(f"Resetting ingest progress for user {user_id} (key: {progress_key})")
-    session_store.redis.delete(progress_key)
+    await asyncio.to_thread(session_store.redis.delete, progress_key)
 
     background_tasks.add_task(background_ingest)
     return {"message": "GitHub ingestion started in background", "repo": f"{repo_info['owner']}/{repo_info['repo']}"}
@@ -280,6 +326,20 @@ async def chat(
         
         # 4. Hybrid Search Document Chunks (Isolated by user_id and brain_id)
         retrieved_chunks = vector_store.search(query_emb, top_k=5, query_text=request.question, user_id=user_id, brain_id=x_brain_id)
+        
+        # 4.2 Expand Skeletons to Full Text (Long-Context Retrieval)
+        for chunk in retrieved_chunks:
+            source = chunk.get("source")
+            if source:
+                redis_key = f"rtfm:repo:{user_id}:{x_brain_id}:{source}:content"
+                try:
+                    full_text = session_store.redis.get(redis_key)
+                    if full_text:
+                        if isinstance(full_text, bytes):
+                            full_text = full_text.decode("utf-8", errors="replace")
+                        chunk["text"] = f"File: {source}\n\n{full_text}"
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve full text from Redis for {source}: {e}")
         
         # 4.5 Staleness Detection
         # Check if any retrieved chunks are older than the latest version in Redis
