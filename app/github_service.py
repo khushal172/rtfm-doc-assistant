@@ -22,7 +22,7 @@ class GithubService:
         branch = None # No default, let GitHub decide
         
         if len(parts) >= 4 and parts[2] == "tree":
-            branch = parts[3]
+            branch = "/".join(parts[3:])
             
         return {"owner": owner, "repo": repo, "branch": branch}
 
