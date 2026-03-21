@@ -51,12 +51,13 @@ class SemanticCache:
         # Keep track of the key for cleanup
         self.redis.sadd(f"rtfm:cache_keys:{user_id}:{brain_id}", vec_id)
 
-    def clear(self):
-        """Flushes the semantic cache."""
-        keys = self.redis.smembers("rtfm:cache_keys")
+    def clear(self, user_id: str, brain_id: str = "default"):
+        """Flushes the semantic cache for a specific user and brain."""
+        key = f"rtfm:cache_keys:{user_id}:{brain_id}"
+        keys = self.redis.smembers(key)
         if keys:
-            self.vs.index.delete(keys)
-            self.redis.delete("rtfm:cache_keys")
+            self.vs.index.delete(list(keys))
+            self.redis.delete(key)
 
     def get_metrics(self) -> dict:
         """Retrieves hitting statistics."""

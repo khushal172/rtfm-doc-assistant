@@ -92,6 +92,9 @@ async def ingest_document(
         # This allows easy "latest version" tracking
         session_store.redis.hset(doc_key, file.filename, json.dumps(doc_info))
         
+        # Invalidate semantic cache for this brain
+        semantic_cache.clear(user_id=user_id, brain_id=x_brain_id)
+        
         logger.info(f"Successfully ingested {len(chunks)} chunks for user {user_id} (v{doc_version}).")
         return {
             "message": "Document ingested successfully", 
@@ -107,15 +110,17 @@ async def ingest_document(
 async def ingest_github(
     url: str,
     background_tasks: BackgroundTasks,
+    brain_id: Optional[str] = None,
     user_id: str = Depends(verify_token),
     x_brain_id: str = Header("default"),
     github_token: Optional[str] = Header(None)
 ):
     """Triggers background ingestion of a public GitHub repository."""
     gh = GithubService(token=github_token)
+    actual_brain_id = brain_id or x_brain_id
     try:
         repo_info = gh.parse_github_url(url)
-        logger.info(f"GitHub Ingest Triggered: {repo_info['owner']}/{repo_info['repo']} for user {user_id}")
+        logger.info(f"GitHub Ingest Triggered: {repo_info['owner']}/{repo_info['repo']} for user {user_id} into brain {actual_brain_id}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid GitHub URL: {str(e)}")
 
@@ -198,7 +203,7 @@ async def ingest_github(
                                         texts_to_embed.append(combined_text)
                                         
                                         # 3. Save Full Text to Redis
-                                        redis_key = f"rtfm:repo:{user_id}:{x_brain_id}:{path}:content"
+                                        redis_key = f"rtfm:repo:{user_id}:{actual_brain_id}:{path}:content"
                                         await asyncio.to_thread(session_store.redis.set, redis_key, item["content"])
                                         file_registry_buffer.add(path)
                                         
@@ -209,7 +214,7 @@ async def ingest_github(
                                         vector_chunks, 
                                         embeddings, 
                                         version=f"github-{repo_info['branch']}", 
-                                        brain_id=x_brain_id, 
+                                        brain_id=actual_brain_id, 
                                         user_id=user_id
                                     )
                                 except Exception as embed_err:
@@ -217,7 +222,7 @@ async def ingest_github(
                                     await asyncio.sleep(1) # Brief pause on error
                                     
                             # Update registry for files processed so far
-                            doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
+                            doc_key = f"user:{user_id}:brain:{actual_brain_id}:documents"
                             for f_path in file_registry_buffer:
                                 doc_info = {
                                     "filename": f_path,
@@ -237,6 +242,9 @@ async def ingest_github(
                         progress_data["status"] = "completed"
                     await asyncio.to_thread(session_store.redis.set, progress_key, json.dumps(progress_data))
                     await asyncio.to_thread(session_store.redis.expire, progress_key, 600)
+            
+            # Invalidate semantic cache for this brain
+            semantic_cache.clear(user_id=user_id, brain_id=actual_brain_id)
             logger.info(f"GitHub Ingest Complete for {repo_info['owner']}/{repo_info['repo']}.")
         except Exception as e:
             logger.error(f"Background GitHub Ingest failed: {e}", exc_info=True)
@@ -442,6 +450,9 @@ async def delete_document(filename: str, user_id: str = Depends(verify_token), x
         doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
         session_store.redis.hdel(doc_key, filename)
         
+        # Invalidate semantic cache for this brain
+        semantic_cache.clear(user_id=user_id, brain_id=x_brain_id)
+        
         logger.info(f"User {user_id} deleted document '{filename}' from brain '{x_brain_id}' ({count} chunks removed).")
         return {"message": f"Document '{filename}' deleted successfully", "chunks_removed": count}
     except Exception as e:
@@ -510,10 +521,10 @@ async def debug_index(passcode: str = None):
         return {"error": str(e)}
 
 @app.delete("/cache")
-async def clear_cache():
-    """Flushes the semantic cache index."""
+async def clear_cache(user_id: str = Depends(verify_token), x_brain_id: str = Header("default")):
+    """Flushes the semantic cache index for the active brain."""
     try:
-        semantic_cache.clear()
+        semantic_cache.clear(user_id, x_brain_id)
         return {"message": "Semantic cache flushed successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
