@@ -1,7 +1,7 @@
 # RTFM Agent 🧠🤖
 
 A modern, high-performance **Documentation Assistant** that provides context-aware answers from your technical documents. Built with **FastAPI**, **Next.js**, and **Upstash**, featuring strict data isolation, semantic caching, and long-term user memory.
-![RTFM Agent Banner](https://raw.githubusercontent.com/khushal172/rtfm-agent/main/banner.png)
+
 ## 🚀 Key Features
 
 - **GitHub Intelligence**: Paste any public GitHub repository URL to locally index its documentation and source code with zero rate limits. Support for optional Personal Access Tokens (PAT).
