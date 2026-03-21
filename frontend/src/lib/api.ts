@@ -91,6 +91,32 @@ export async function deleteDocument(filename: string, token: string, brainId: s
   return await response.json();
 }
 
+export async function bulkDeleteDocuments(filenames: string[], token: string, brainId: string = "default") {
+  const response = await fetch(`${API_BASE_URL}/documents/bulk`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+      "X-Brain-Id": brainId
+    },
+    body: JSON.stringify({ filenames })
+  });
+  if (!response.ok) throw new Error("Failed to delete selected documents");
+  return await response.json();
+}
+
+export async function deleteAllDocuments(token: string, brainId: string = "default") {
+  const response = await fetch(`${API_BASE_URL}/documents/bulk?all=true`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "X-Brain-Id": brainId
+    }
+  });
+  if (!response.ok) throw new Error("Failed to delete all documents");
+  return await response.json();
+}
+
 export async function listBrains(token: string) {
   const response = await fetch(`${API_BASE_URL}/brains`, {
     headers: { "Authorization": `Bearer ${token}` }

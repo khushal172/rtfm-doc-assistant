@@ -128,3 +128,26 @@ class VectorStore:
             self.index.delete(ids=ids_to_delete)
             return len(ids_to_delete)
         return 0
+
+    def delete_all_chunks(self, user_id: str, brain_id: str = "default"):
+        """
+        Wipes all chunks for a specific user and brain entirely.
+        """
+        ids_to_delete = []
+        cursor = '0'
+        
+        while cursor:
+            res = self.index.range(cursor=cursor, limit=1000, include_metadata=True)
+            for v in res.vectors:
+                if (v.metadata.get('user_id') == user_id and 
+                    v.metadata.get('brain_id') == brain_id):
+                    ids_to_delete.append(v.id)
+            cursor = res.next_cursor
+            
+        if ids_to_delete:
+            # Delete in chunks of 1000 to avoid request limits
+            for i in range(0, len(ids_to_delete), 1000):
+                batch = ids_to_delete[i:i + 1000]
+                self.index.delete(ids=batch)
+            return len(ids_to_delete)
+        return 0

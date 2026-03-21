@@ -12,7 +12,7 @@ from app.cache import SemanticCache
 
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from app.session import SessionStore
 from app.memory import LongTermMemory
 from app.logging_config import logger
@@ -47,6 +47,9 @@ ltm = LongTermMemory(vector_store, embedder)
 class ChatRequest(BaseModel):
     question: str
     session_id: Optional[str] = None
+
+class BulkDeleteRequest(BaseModel):
+    filenames: List[str]
 
 from fastapi import Header
 
@@ -440,6 +443,65 @@ async def list_documents(user_id: str = Depends(verify_token), x_brain_id: str =
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/documents/bulk")
+async def bulk_delete_documents(
+    request: Optional[BulkDeleteRequest] = None, 
+    all: bool = False,
+    user_id: str = Depends(verify_token), 
+    x_brain_id: str = Header("default")
+):
+    """Bulks delete specified documents, or drops everything if all=true."""
+    try:
+        doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
+        chunks_removed = 0
+        files_removed = 0
+        
+        if all:
+            # 1. Purge entire Vector Store for this brain
+            chunks_removed = vector_store.delete_all_chunks(user_id=user_id, brain_id=x_brain_id)
+            
+            # 2. Clear Redis File Registry completely
+            session_store.redis.delete(doc_key)
+            
+            # 3. Clear Redis Full-Text Content
+            content_keys = session_store.redis.keys(f"rtfm:repo:{user_id}:{x_brain_id}:*:content")
+            if content_keys:
+                session_store.redis.delete(*content_keys)
+                
+            files_removed = -1 # Signals 'all'
+            logger.info(f"User {user_id} triggered Delete All for brain '{x_brain_id}' ({chunks_removed} vectors destroyed).")
+            
+        elif request and request.filenames:
+            for filename in request.filenames:
+                # 1. Purge from Vector Store
+                count = vector_store.delete_chunks(filename, user_id, brain_id=x_brain_id)
+                chunks_removed += count
+                files_removed += 1
+                
+                # 2. Remove from Redis Registry
+                session_store.redis.hdel(doc_key, filename)
+                
+                # 3. Remove Full Text
+                redis_key = f"rtfm:repo:{user_id}:{x_brain_id}:{filename}:content"
+                session_store.redis.delete(redis_key)
+                
+            logger.info(f"User {user_id} bulk deleted {files_removed} documents from brain '{x_brain_id}'.")
+            
+        else:
+            raise HTTPException(status_code=400, detail="Must provide filenames array or all=true")
+            
+        # Invalidate semantic cache for this brain
+        semantic_cache.clear(user_id=user_id, brain_id=x_brain_id)
+        
+        return {
+            "message": "Bulk deletion successful", 
+            "files_removed": files_removed,
+            "chunks_removed": chunks_removed
+        }
+    except Exception as e:
+        logger.error(f"Bulk deletion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/documents/{filename:path}")
 async def delete_document(filename: str, user_id: str = Depends(verify_token), x_brain_id: str = Header("default")):
     """Deletes a document and all its chunks from the vector store and registry for a specific brain."""
@@ -450,6 +512,10 @@ async def delete_document(filename: str, user_id: str = Depends(verify_token), x
         # 2. Remove from Redis Registry
         doc_key = f"user:{user_id}:brain:{x_brain_id}:documents"
         session_store.redis.hdel(doc_key, filename)
+        
+        # 3. Remove Full Text Content from Redis if exists
+        redis_key = f"rtfm:repo:{user_id}:{x_brain_id}:{filename}:content"
+        session_store.redis.delete(redis_key)
         
         # Invalidate semantic cache for this brain
         semantic_cache.clear(user_id=user_id, brain_id=x_brain_id)
