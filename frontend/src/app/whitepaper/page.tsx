@@ -38,7 +38,7 @@ export default function Whitepaper() {
            <div className="text-indigo-500 font-mono text-sm tracking-widest uppercase">[01] Neural Retrieval Engine</div>
            <h2 className="text-3xl font-bold">Semantic Over Keyword</h2>
            <p className="text-white/60 leading-relaxed text-lg">
-             Traditional documentation search relies on keyword matching, leading to "no results" for semantically similar queries. RTFM Agent utilizes the **Gemini 2.5 Pro Embedding Model**, mapping documents into a high-dimensional vector space (1536 dimensions). 
+             Traditional documentation search relies on keyword matching, leading to &quot;no results&quot; for semantically similar queries. RTFM Agent utilizes the <strong className="text-white">Gemini 2.5 Pro Embedding Model</strong>, mapping documents into a high-dimensional vector space (1536 dimensions). 
            </p>
            <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/10 font-mono text-xs text-indigo-400/80">
               Similarity(A, B) = (A · B) / (||A|| * ||B||) // Cosine Similarity at the core
@@ -50,25 +50,34 @@ export default function Whitepaper() {
            <div className="text-indigo-500 font-mono text-sm tracking-widest uppercase">[02] Multi-Brain Isolation</div>
            <h2 className="text-3xl font-bold">Cryptographically Scoped Contexts</h2>
            <p className="text-white/60 leading-relaxed text-lg">
-             Data privacy is non-negotiable. Every document segment (vector) is tagged with a composite metadata key: `user_id` + `brain_id`. Our backend performs strict **Metadata Filtering** at the database layer (Upstash Vector), ensuring that cross-project data leakage is mathematically impossible.
+             Data privacy is non-negotiable. With strict Multi-Tenancy implementation, every document segment (vector) is tagged with a composite metadata key: <code className="px-1.5 py-0.5 rounded-md bg-white/10 font-mono text-sm">user_id</code> + <code className="px-1.5 py-0.5 rounded-md bg-white/10 font-mono text-sm">brain_id</code>. Our backend performs aggressive <strong className="text-white">Metadata Filtering</strong> at the database layer (Upstash Vector), ensuring that cross-project or cross-tenant data leakage is mathematically impossible.
            </p>
         </section>
 
         {/* Section 3 */}
         <section className="space-y-8">
-           <div className="text-indigo-500 font-mono text-sm tracking-widest uppercase">[03] Performance Architecture</div>
-           <h2 className="text-3xl font-bold">Edge-Side Semantic Caching</h2>
+           <div className="text-indigo-500 font-mono text-sm tracking-widest uppercase">[03] GitHub Intelligence</div>
+           <h2 className="text-3xl font-bold">Repository-Wide Contextual Indexing</h2>
            <p className="text-white/60 leading-relaxed text-lg">
-             To reduce LLM latency and API costs, we implemented a custom **Semantic Cache** using Upstash Redis. Identical or highly similar questions (Threshold &gt; 0.98) are intercepted. This results in response times as low as **40ms**, compared to the typical 2-4 seconds for a fresh LLM generation.
+             Focus on building, not searching. RTFM Agent natively ingests entire GitHub repositories. By providing a public repository URL and an optional Personal Access Token (PAT) to bypass bandwidth limits, the platform clones, chunks, and semantically indexes the complete source code and documentation. This enables the agent to reason about complex codebase architectures in milliseconds.
            </p>
         </section>
 
         {/* Section 4 */}
         <section className="space-y-8">
-           <div className="text-indigo-500 font-mono text-sm tracking-widest uppercase">[04] Security & Auth</div>
+           <div className="text-indigo-500 font-mono text-sm tracking-widest uppercase">[04] Performance Architecture</div>
+           <h2 className="text-3xl font-bold">Edge-Side Semantic Caching</h2>
+           <p className="text-white/60 leading-relaxed text-lg">
+             To reduce LLM latency and API costs, we implemented a custom <strong className="text-white">Semantic Cache</strong> using Upstash Redis. Identical or highly similar questions (Threshold &gt; 0.98) are intercepted. This results in response times as low as <strong className="text-white">40ms</strong>, compared to the typical 2-4 seconds for a fresh LLM generation.
+           </p>
+        </section>
+
+        {/* Section 5 */}
+        <section className="space-y-8">
+           <div className="text-indigo-500 font-mono text-sm tracking-widest uppercase">[05] Security & Auth</div>
            <h2 className="text-3xl font-bold">JWT Verification via JWKS</h2>
            <p className="text-white/60 leading-relaxed text-lg">
-             Identity is managed by **Clerk**. The FastAPI backend verifies the authenticity of every request by fetching and caching the Public Keys (JWKS) from Clerk's servers, ensuring tokens are signed, not expired, and belong to the authorized user.
+             Identity is managed by <strong className="text-white">Clerk</strong>. The FastAPI backend verifies the authenticity of every request by fetching and caching the Public Keys (JWKS) from Clerk&apos;s servers, ensuring tokens are signed, not expired, and belong to the authorized user.
            </p>
         </section>
 

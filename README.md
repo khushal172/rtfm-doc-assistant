@@ -6,7 +6,8 @@ A modern, high-performance **Documentation Assistant** that provides context-awa
 
 ## 🚀 Key Features
 
-- **Multi-Brain Isolation**: Organize documents into separate "Knowledge Spaces" (Brains). Each brain is strictly isolated by `user_id` and `brain_id`.
+- **GitHub Intelligence**: Paste any public GitHub repository URL to locally index its documentation and source code with zero rate limits. Support for optional Personal Access Tokens (PAT).
+- **Multi-Tenancy & Brain Isolation**: Cryptographically scoped contexts ensure strict data isolation. Every vector is tagged and filtered by `user_id` and `brain_id` at the database layer.
 - **Hybrid Semantic Search**: Uses Gemini `gemini-embedding-2-preview` (1536-dim) for high-precision retrieval.
 - **Isolated Semantic Caching**: Instant answers for identical queries, scoped specifically to each brain.
 - **Long-Term Memory**: The agent extracts facts about you during conversations to provide personalized context.
@@ -72,7 +73,7 @@ npm run dev
 4. Deploy!
 
 ## 🔐 Security & Privacy
-RTFM Agent implements **Multi-Tenancy** at the database layer. Every vector and cache entry is tagged with a Clerk `user_id`. The backend strictly verifies JWTs via JWKS on every request.
+RTFM Agent implements strict **Multi-Tenancy** at the database layer. Every document segment (vector) and cache entry is tagged with a composite metadata key including Clerk `user_id` and `brain_id`. Data retrieval processes perform strict metadata filtering before returning any context, ensuring that cross-tenant and cross-brain data leakage is mathematically impossible. The backend strictly verifies JWTs via JWKS on every request.
 
 ---
 Built with ❤️ by [Your Name]
