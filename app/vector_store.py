@@ -61,9 +61,10 @@ class VectorStore:
         logger.info(f"SUCCESS: Upserting {len(vectors)} vectors | user='{u_id}' | brain='{b_id}' | meta_keys={list(vectors[0][2].keys())}")
         res = self.index.upsert(vectors=vectors)
 
-    def search(self, query_embedding: List[float], top_k: int = 5, query_text: str = None, user_id: str = None, brain_id: str = "default") -> List[Dict[str, Any]]:
-        """Searches the vector store using KNN and applies keyword boosting. Supports user_id and brain_id isolation."""
-        fetch_k = top_k * 3 if query_text else top_k
+    def search(self, query_embedding: List[float], top_k: int = 5, query_text: str = None, user_id: str = None, brain_id: str = "default", min_score: float = 0.5) -> List[Dict[str, Any]]:
+        """Searches the vector store using KNN and applies keyword boosting. Supports isolation and semantic thresholds."""
+        # Fetch a deep pool so we don't miss high-relevance chunks buried by dense grouping
+        fetch_k = max(top_k * 3, 50)
         
         # Build filter for user_id and brain_id
         u_id = user_id or "anonymous"
@@ -83,18 +84,27 @@ class VectorStore:
         for i, res in enumerate(results[:3]):
             logger.debug(f"Result {i}: id={res.id}, score={res.score}, meta_keys={list(res.metadata.keys()) if res.metadata else 'None'}")
         
-        metadata_list = [res.metadata for res in results if res.metadata and "text" in res.metadata]
+        metadata_list = []
+        for res in results:
+            if res.metadata and "text" in res.metadata:
+                # Discard low-confidence matches immediately
+                if res.score < min_score:
+                    continue
+                meta = res.metadata.copy()
+                meta["_semantic_score"] = res.score
+                meta["_boost_score"] = 0
+                metadata_list.append(meta)
         
         if query_text:
-            # Simple keyword boosting (Simulated Hybrid Search)
+            # Simulated Hybrid Search: Bump score based on exact keywords
             keywords = [k.lower() for k in query_text.split() if len(k) > 3]
             for meta in metadata_list:
-                # Basic string match
                 content = meta.get("text", "").lower()
-                bump = sum(0.1 for k in keywords if k in content)
+                bump = sum(0.05 for k in keywords if k in content)
                 meta["_boost_score"] = bump
                 
-            metadata_list = sorted(metadata_list, key=lambda x: x.get("_boost_score", 0), reverse=True)
+        # Sort by combination of semantic similarity and keyword presence
+        metadata_list = sorted(metadata_list, key=lambda x: x.get("_semantic_score", 0) + x.get("_boost_score", 0), reverse=True)
             
         return metadata_list[:top_k]
 
