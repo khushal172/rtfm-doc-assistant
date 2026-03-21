@@ -226,8 +226,9 @@ async def ingest_github(
                             for f_path in file_registry_buffer:
                                 doc_info = {
                                     "filename": f_path,
-                                    "version": f_path,
-                                    "ingested_at": datetime.utcnow().isoformat() + "Z"
+                                    "version": f"github-{repo_info['branch']}",
+                                    "ingested_at": datetime.utcnow().isoformat() + "Z",
+                                    "brain_id": actual_brain_id
                                 }
                                 await asyncio.to_thread(session_store.redis.hset, doc_key, f_path, json.dumps(doc_info))
                             file_registry_buffer.clear()
@@ -333,7 +334,7 @@ async def chat(
             logger.warning(f"Long term memory retrieval failed: {e}. Degrading gracefully.")
         
         # 4. Hybrid Search Document Chunks (Isolated by user_id and brain_id)
-        retrieved_chunks = vector_store.search(query_emb, top_k=5, query_text=request.question, user_id=user_id, brain_id=x_brain_id)
+        retrieved_chunks = vector_store.search(query_emb, top_k=20, query_text=request.question, user_id=user_id, brain_id=x_brain_id)
         
         # 4.2 Expand Skeletons to Full Text (Long-Context Retrieval)
         for chunk in retrieved_chunks:
