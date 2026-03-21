@@ -124,6 +124,7 @@ export async function ingestGithub(repoUrl: string, token: string, brainId: stri
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`,
+        "X-Brain-Id": brainId || "default",
         ...(githubToken ? { "github-token": githubToken } : {})
       },
       signal: controller.signal
@@ -141,7 +142,7 @@ export async function ingestGithub(repoUrl: string, token: string, brainId: stri
 
 export async function getIngestStatus(token: string) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
   try {
     // Add a timestamp to bypass any browser/proxy caching
@@ -158,4 +159,16 @@ export async function getIngestStatus(token: string) {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+export async function clearCache(token: string, brainId: string = "default") {
+  const response = await fetch(`${API_BASE_URL}/cache`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "X-Brain-Id": brainId
+    }
+  });
+  if (!response.ok) throw new Error("Failed to clear cache");
+  return await response.json();
 }
