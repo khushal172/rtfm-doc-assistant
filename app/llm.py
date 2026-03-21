@@ -3,10 +3,10 @@ from typing import List, Dict, Any, Generator
 from app.config import settings
 
 class LLMService:
-    """Handles prompt assembly and interaction with Gemini 2.5 Flash."""
+    """Handles prompt assembly and interaction with Gemini 3.1 Flash Lite."""
     def __init__(self):
         self.client = genai.Client(api_key=settings.gemini_api_key)
-        self.model_name = "gemini-2.5-flash"
+        self.model_name = "gemini-3.1-flash-lite-preview"
 
     def assemble_prompt(self, question: str, retrieved_chunks: List[Dict[str, Any]], history: List[Dict[str, str]] = None, memories: List[str] = None) -> str:
         """Constructs a RAG prompt using the provided document chunks, conversation history, and user memories."""
@@ -62,3 +62,30 @@ QUESTION:
         for chunk in response_stream:
             if chunk.text:
                 yield chunk.text
+
+    def summarize_code_batch(self, file_skeletons: Dict[str, str]) -> str:
+        """
+        Accepts a dictionary of `{filepath: skeleton}` and returns a JSON string
+        of `{filepath: "purpose summary"}`. Batching this reduces RPM.
+        """
+        if not file_skeletons:
+            return "{}"
+            
+        prompt = "You are an expert software architect. Analyze the provided file skeletons.\n"
+        prompt += "For each file, determine its primary purpose in 1-2 sentences.\n"
+        prompt += "Return the result STRICTLY as a valid JSON object where keys are the file paths and values are the summaries.\n\n"
+        
+        for fp, skel in file_skeletons.items():
+            prompt += f"--- {fp} ---\n{skel}\n\n"
+            
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config={"response_mime_type": "application/json"}
+            )
+            return response.text
+        except Exception as e:
+            from app.logging_config import logger
+            logger.error(f"Failed to batch summarize: {e}")
+            return "{}"
